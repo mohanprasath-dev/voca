@@ -1,0 +1,4 @@
+INFO:httpx:HTTP Request: POST https://api.murf.ai/v1/speech/stream "HTTP/1.1 400 Bad Request"
+ERROR:voca.murf:Murf API Error (400): {"error_code":400,"error_message":"Invalid voice_id: en-IN-female-1. The specified voice is not supported for the selected model (GEN2). Note: Falcon and Gen2 each have their own voice catalog. Use GET /v1/speech/voices?model=GEN2 to fetch the list of voices supported by this model, or browse the voice library at: https://murf.ai/api/docs/voices-styles/voice-library."}
+Testing Murf Service streaming...
+Test failed: Murf API returned status 400: {"error_code":400,"error_message":"Invalid voice_id: en-IN-female-1. The specified voice is not supported for the selected model (GEN2). Note: Falcon and Gen2 each have their own voice catalog. Use GET /v1/speech/voices?model=GEN2 to fetch the list of voices supported by this model, or browse the voice library at: https://murf.ai/api/docs/voices-styles/voice-library."}
