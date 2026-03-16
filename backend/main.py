@@ -1,6 +1,7 @@
 import logging
 from fastapi import FastAPI
-from api.routes import browser, telephony, dashboard
+from api.routes import browser, dashboard
+from api.routes.telephony import router as telephony_router
 from api.middleware.cors import setup_cors
 from services.persona import PersonaService
 
@@ -20,7 +21,8 @@ setup_cors(app)
 
 # Include routers
 app.include_router(browser.router, prefix="/ws/browser", tags=["Websocket Browser"])
-app.include_router(telephony.router, prefix="/telephony", tags=["Telephony"])
+app.include_router(telephony_router, prefix="/telephony", tags=["Telephony"])
+app.include_router(telephony_router)
 app.include_router(dashboard.router, tags=["Dashboard"])
 
 @app.on_event("startup")

@@ -15,12 +15,8 @@ import math
 import struct
 from typing import AsyncGenerator, Callable
 
-from deepgram import (
-    DeepgramClient,
-    DeepgramClientOptions,
-    LiveTranscriptionEvents,
-    LiveOptions,
-)
+from deepgram import AsyncDeepgramClient
+from deepgram.core.events import EventType
 
 # Add parent directory to path to allow absolute imports when running standalone
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,8 +31,7 @@ class DeepgramService:
     """Deepgram STT Service handling WebSocket-based audio transcription."""
     def __init__(self):
         self.api_key = settings.deepgram_api_key
-        # We ensure logging for deepgram isn't too verbose by configuring client options
-        self.deepgram = DeepgramClient(self.api_key)
+        self.deepgram = AsyncDeepgramClient(api_key=self.api_key)
 
     async def transcribe_stream(self, audio_generator: AsyncGenerator[bytes, None], on_transcript: Callable):
         """
@@ -44,62 +39,48 @@ class DeepgramService:
         Calls on_transcript(transcript: str, language: str, is_final: bool)
         """
         try:
-            # Create a websocket connection to Deepgram
-            dg_connection = self.deepgram.listen.asyncwebsocket.v("1")
-
-            async def on_message(self, result, **kwargs):
-                sentence = result.channel.alternatives[0].transcript
-                if len(sentence) == 0:
-                    return
-                # Extract language if present. The multi model usually detects language
-                # but might not return it in the result directly unless requested.
-                # deepgram returns it in `result.channel.alternatives[0].languages` if enabled
-                language = "en"
-                if hasattr(result.channel.alternatives[0], "languages") and result.channel.alternatives[0].languages:
-                    language = result.channel.alternatives[0].languages[0]
-                
-                is_final = result.is_final
-                
-                if asyncio.iscoroutinefunction(on_transcript):
-                    await on_transcript(sentence, language, is_final)
-                else:
-                    on_transcript(sentence, language, is_final)
-
-            async def on_metadata(self, metadata, **kwargs):
-                pass
-
-            async def on_error(self, error, **kwargs):
-                logger.error(f"Deepgram WebSocket Error: {error}")
-
-            dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
-            dg_connection.on(LiveTranscriptionEvents.Metadata, on_metadata)
-            dg_connection.on(LiveTranscriptionEvents.Error, on_error)
-
-            options = LiveOptions(
+            async with self.deepgram.listen.v1.connect(
                 model="nova-2",
                 language="multi",
-                smart_format=True,
+                smart_format="true",
                 encoding="linear16",
-                channels=1,
-                sample_rate=16000,
-                interim_results=True,
-            )
+                channels="1",
+                sample_rate="16000",
+                interim_results="true",
+            ) as dg_connection:
+                async def on_message(result):
+                    if not hasattr(result, "channel"):
+                        return
+                    alternatives = getattr(result.channel, "alternatives", [])
+                    if not alternatives:
+                        return
+                    sentence = alternatives[0].transcript
+                    if len(sentence) == 0:
+                        return
+                    language = "en"
+                    if hasattr(alternatives[0], "languages") and alternatives[0].languages:
+                        language = alternatives[0].languages[0]
+                    is_final = getattr(result, "is_final", False)
+                    if asyncio.iscoroutinefunction(on_transcript):
+                        await on_transcript(sentence, language, is_final)
+                    else:
+                        on_transcript(sentence, language, is_final)
 
-            # Connect
-            if await dg_connection.start(options) is False:
-                logger.error("Failed to connect to Deepgram")
-                raise DeepgramServiceError("Failed to connect to Deepgram")
+                async def on_error(error):
+                    logger.error(f"Deepgram WebSocket Error: {error}")
 
-            # Stream audio from generator
-            async for chunk in audio_generator:
-                if chunk:
-                    await dg_connection.send(chunk)
-            
-            # Allow final transcripts to process
-            # wait a bit before finishing to catch last transcripts
-            await asyncio.sleep(1.0)
-            await dg_connection.finish()
+                dg_connection.on(EventType.MESSAGE, on_message)
+                dg_connection.on(EventType.ERROR, on_error)
 
+                listener_task = asyncio.create_task(dg_connection.start_listening())
+                async for chunk in audio_generator:
+                    if chunk:
+                        await dg_connection.send_media(chunk)
+
+                await asyncio.sleep(1.0)
+                await dg_connection.send_finalize()
+                await dg_connection.send_close_stream()
+                await listener_task
         except Exception as e:
             logger.error(f"Deepgram connection failed: {e}")
             raise DeepgramServiceError(f"Deepgram connection failed: {e}")
