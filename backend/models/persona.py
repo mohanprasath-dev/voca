@@ -5,6 +5,7 @@ class VoiceConfig(BaseModel):
     murf_voice_id: str
     murf_style: str
     language: str
+    language_voice_map: dict[str, str] = {}
 
 
 class UIConfig(BaseModel):

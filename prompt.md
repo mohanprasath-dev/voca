@@ -7,8 +7,8 @@
 ## Build Status
 - [x] Milestone 1 — Foundation ✅
 - [x] Milestone 2 — Voice Pipeline Core ✅ (services built, Murf verified 200/80572 bytes)
-- [ ] Milestone 3 — Persona Engine ← CURRENT
-- [ ] Milestone 4 — Multilingual Intelligence
+- [x] Milestone 3 — Persona Engine ✅ (3 personas, PersonaService, pipeline wired, WebSocket persona switch)
+- [ ] Milestone 4 — Multilingual Intelligence ← CURRENT
 - [ ] Milestone 5 — Browser Interface
 - [ ] Milestone 6 — Telephony Layer
 - [ ] Milestone 7 — Post-Call Intelligence
@@ -23,16 +23,19 @@
 - Backend runs on: `http://localhost:8000`
 - Frontend runs on: `http://localhost:3000`
 - `/health` endpoint verified returning `{"status":"ok","version":"1.0.0"}`
-- 3 personas loaded and verified on startup
+- 3 personas loaded and verified on startup: aura, nova, apex
 - Murf Falcon TTS — confirmed working (HTTP 200, 80,572 bytes returned)
-- Deepgram SDK — installed, `deepgram-sdk` package
+- Deepgram SDK — installed, `deepgram-sdk` package, Nova-2 model
 - **Gemini SDK — use `google-genai` (new SDK), NOT `google-generativeai` (deprecated)**
   - Import: `from google import genai`
   - Client: `genai.Client(api_key=...)`
-  - Generate: `client.models.generate_content(model='gemini-2.5-flash', contents=...)`
+  - Model: `gemini-2.5-flash`
   - The old `google.generativeai` package is deprecated — do not use it anywhere
 - All packages installed in venv: fastapi, uvicorn, websockets, httpx, python-dotenv,
   pydantic-settings, deepgram-sdk, google-genai, twilio, aiohttp
+- Gemini response format: always starts with `[LANG:xx]` tag, stripped before TTS
+- `/personas` endpoint verified returning 3 personas, no system_prompt leakage
+- WebSocket at `/ws/browser/{persona_id}` sends `persona_loaded` on connect, supports `switch_persona`
 
 ---
 
@@ -84,7 +87,7 @@ Every day, billions of phone calls go unanswered. Patients call hospitals at 2AM
 - **Framework:** FastAPI (async)
 - **Voice Output:** Murf Falcon TTS API (streaming)
 - **Voice Input:** Deepgram STT (streaming WebSocket, Nova-2 model)
-- **AI Brain:** Google Gemini Flash (`gemini-2.5-flash`) via `google-genai` SDK
+- **AI Brain:** Google Gemini (`gemini-2.5-flash`) via `google-genai` SDK
 - **Telephony:** Twilio Media Streams (WebSocket)
 - **Notifications:** Twilio WhatsApp API
 - **Deployment:** Vercel Serverless (Python runtime)
@@ -110,7 +113,7 @@ voca/
 │   │   ├── routes/
 │   │   │   ├── browser.py        # WebSocket endpoint for browser clients
 │   │   │   ├── telephony.py      # Twilio webhook + Media Streams endpoint
-│   │   │   └── dashboard.py      # Session logs and summaries
+│   │   │   └── dashboard.py      # Session logs and summaries + /personas endpoints
 │   │   └── middleware/
 │   │       ├── cors.py
 │   │       └── logging.py
@@ -119,15 +122,15 @@ voca/
 │   │   ├── deepgram.py           # Deepgram STT service
 │   │   ├── gemini.py             # Gemini brain (uses google-genai SDK)
 │   │   ├── pipeline.py           # Orchestrates murf + deepgram + gemini
-│   │   ├── persona.py            # Loads and manages persona configs
+│   │   ├── persona.py            # Loads and manages persona configs (singleton)
 │   │   ├── session.py            # Session logging and summary generation
 │   │   └── whatsapp.py           # Twilio WhatsApp notification service
 │   ├── personas/
-│   │   ├── aura.json             # Hospital front desk persona
-│   │   ├── nova.json             # School/university admin persona
-│   │   └── apex.json             # Startup customer support persona
+│   │   ├── aura.json             # Hospital front desk persona ✅
+│   │   ├── nova.json             # School/university admin persona ✅
+│   │   └── apex.json             # Startup customer support persona ✅
 │   ├── models/
-│   │   ├── persona.py            # Pydantic models for persona schema
+│   │   ├── persona.py            # Pydantic models for persona schema ✅
 │   │   └── session.py            # Pydantic models for session schema
 │   ├── main.py                   # FastAPI app entry point
 │   ├── config.py                 # Environment config loader
@@ -179,6 +182,29 @@ Phone call → Twilio → POST /telephony/incoming
 
 ---
 
+## Multilingual Architecture
+
+This is Voca's killer feature and demo centrepiece. The multilingual system works as follows:
+
+- **Detection:** Gemini detects the language of every user message and returns `[LANG:xx]` at the start of every response
+- **State tracking:** `VocaPipeline` maintains `self.current_language` — updated every turn
+- **Murf voice switching:** When language changes, the Murf voice ID switches to match:
+  - `en` → use persona's default `murf_voice_id` (e.g. `en-IN-rohan`)
+  - `ta` (Tamil) → `ta-IN-rohan` or closest Tamil voice
+  - `hi` (Hindi) → `hi-IN-rohan` or closest Hindi voice
+- **Context preservation:** Language switch does NOT reset conversation history
+- **Mid-sentence switch:** If user switches language mid-conversation, Voca follows on the very next response
+- **Supported languages:** English (`en`), Tamil (`ta`), Hindi (`hi`) — minimum for demo
+
+### Murf Voice ID Mapping
+```
+en → en-IN-rohan (Aura), en-IN-priya (Nova), en-IN-arjun (Apex)
+ta → ta-IN-rohan (all personas)
+hi → hi-IN-rohan (all personas)
+```
+
+---
+
 ## Persona Schema
 
 Each persona is a JSON file in `/backend/personas/` with this exact structure:
@@ -199,7 +225,12 @@ Each persona is a JSON file in `/backend/personas/` with this exact structure:
   "voice_config": {
     "murf_voice_id": "en-IN-rohan",
     "murf_style": "Conversational",
-    "language": "en-IN"
+    "language": "en-IN",
+    "language_voice_map": {
+      "en": "en-IN-rohan",
+      "ta": "ta-IN-rohan",
+      "hi": "hi-IN-rohan"
+    }
   },
   "ui_config": {
     "accent_color": "#00C2B8",
@@ -288,6 +319,7 @@ TWILIO_PHONE_NUMBER=
 9. **Mobile responsive from the start** — not retrofitted at the end
 10. **Clean git history** — one commit per milestone checkpoint, descriptive messages
 11. **Use `google-genai` SDK only** — never import from `google.generativeai`
+12. **Language switch never resets history** — multilingual is seamless, not a new session
 
 ---
 

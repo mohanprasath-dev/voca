@@ -23,6 +23,8 @@ class VocaPipeline:
         self.murf_service = MurfService()
 
         self.history: list[dict] = []
+        self.current_language: str = "en"
+        self.language_history: list[str] = []
         self.escalation_needed: bool = False
         self.escalation_summary: str = ""
 
@@ -32,6 +34,12 @@ class VocaPipeline:
             system_prompt=self.system_prompt,
             history=self.history,
         )
+
+        previous_language = self.current_language
+        self.current_language = language_code
+        self.language_history.append(language_code)
+        if previous_language != language_code:
+            logger.info("Language switched: %s -> %s", previous_language, language_code)
 
         self.history.append({"role": "user", "content": user_message})
         self.history.append({"role": "assistant", "content": response_text})
@@ -47,9 +55,20 @@ class VocaPipeline:
         }
 
     async def generate_audio(self, text: str):
+        voice_map = self.voice_config.get("language_voice_map", {})
+        if self.current_language in voice_map:
+            voice_id = voice_map[self.current_language]
+        else:
+            logger.warning(
+                "Language %s not in voice map for persona %s, falling back to default",
+                self.current_language,
+                self.persona_id,
+            )
+            voice_id = self.voice_config["murf_voice_id"]
+
         return self.murf_service.generate_audio(
             text=text,
-            voice_id=self.voice_config["murf_voice_id"],
+            voice_id=voice_id,
             style=self.voice_config["murf_style"],
             language=self.voice_config["language"],
         )

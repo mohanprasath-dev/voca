@@ -55,6 +55,10 @@ class GeminiService:
         for item in history:
             role = str(item.get("role", "user")).strip() or "user"
             content = str(item.get("content", "")).strip()
+            if not content:
+                parts = item.get("parts", [])
+                if isinstance(parts, list):
+                    content = " ".join(str(part).strip() for part in parts if str(part).strip())
             if content:
                 history_lines.append(f"{role.upper()}: {content}")
 
@@ -64,6 +68,12 @@ class GeminiService:
             [
                 "SYSTEM INSTRUCTIONS:",
                 system_prompt.strip(),
+                "LANGUAGE RULE: Detect the language of the user's latest message.",
+                "Respond entirely in that language.",
+                "Always begin your response with [LANG:xx] where xx is the ISO 639-1 code.",
+                "Examples: [LANG:en] for English, [LANG:ta] for Tamil, [LANG:hi] for Hindi.",
+                "If the user switches language, you switch immediately in your next response.",
+                "Never mix languages in a single response.",
                 "OUTPUT RULES:",
                 "1. Detect the user's language from the conversation context.",
                 "2. Start the response with [LANG:xx] where xx is the ISO language code you are using.",

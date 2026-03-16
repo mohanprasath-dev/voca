@@ -23,7 +23,12 @@
   "voice_config": {
     "murf_voice_id": "en-IN-priya",
     "murf_style": "Conversational",
-    "language": "en-IN"
+    "language": "en-IN",
+    "language_voice_map": {
+      "en": "en-IN-priya",
+      "ta": "ta-IN-rohan",
+      "hi": "hi-IN-rohan"
+    }
   },
   "ui_config": {
     "accent_color": "#F59E0B",

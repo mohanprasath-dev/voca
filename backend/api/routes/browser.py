@@ -69,7 +69,7 @@ async def browser_websocket(
 					await websocket.send_json({"type": "error", "message": "Transcript text is required"})
 					continue
 
-				await websocket.send_json({"type": "transcript", "text": transcript})
+				previous_language = pipeline.current_language
 
 				try:
 					response_data = await pipeline.respond(transcript)
@@ -78,11 +78,30 @@ async def browser_websocket(
 					await websocket.send_json({"type": "error", "message": f"Pipeline error: {exc}"})
 					continue
 
+				detected_language = response_data["language"]
+
+				await websocket.send_json(
+					{
+						"type": "transcript",
+						"text": transcript,
+						"language": detected_language,
+					}
+				)
+
+				if previous_language != detected_language:
+					await websocket.send_json(
+						{
+							"type": "language_changed",
+							"from": previous_language,
+							"to": detected_language,
+						}
+					)
+
 				await websocket.send_json(
 					{
 						"type": "response",
 						"text": response_data["text"],
-						"language": response_data["language"],
+						"language": detected_language,
 					}
 				)
 
