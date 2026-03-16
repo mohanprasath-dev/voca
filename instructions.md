@@ -1,414 +1,320 @@
 # Voca — AI Agent Working Instructions
 
-> Read `prompt.md` fully before starting. Every architectural decision in that file is final.
-> This file tells you what to build RIGHT NOW.
-> Milestones 1–4 are complete. Do not touch anything from those milestones.
+> Read `prompt.md` fully before starting. Pay special attention to the Telephony Architecture section.
+> Milestones 1–5 are complete. Do not touch anything from those milestones.
 
 ---
 
-## Your Role
+## Environment
 
-You are a senior full-stack engineer and UI designer building Voca's browser interface. You write clean TypeScript, production-grade React, and world-class UI. Every component is purposeful. Every animation has intention. This UI must be memorable — not generic.
-
----
-
-## Environment (Confirmed Working)
-
-- Frontend: `D:\Projects\voca\frontend\`
-- Frontend URL: `http://localhost:3000`
-- Backend URL: `http://localhost:8000`
-- Stack: Next.js 14 (App Router), TypeScript, Tailwind CSS, Framer Motion
-- Run frontend: `cd D:\Projects\voca\frontend && npm run dev`
-
----
-
-## How to Work
-
-1. **Read `prompt.md` fully** — especially the UI Design Direction and WebSocket Message Protocol sections
-2. **Build one checkpoint at a time**
-3. **Run `npm run dev` and visually verify in browser** after each checkpoint
-4. **TypeScript strict mode** — no `any` types, no suppressed errors
-5. **Mobile responsive from the start** — test at 375px width too
+- Python 3.14, venv: `D:\Projects\voca\.venv\`
+- Backend: `D:\Projects\voca\backend\`
+- Activate: `d:\Projects\voca\.venv\Scripts\Activate.ps1`
+- Gemini SDK: `google-genai`, model: `gemini-2.5-flash`
 
 ---
 
 ## Current Session Target
 
-### MILESTONE 5 — BROWSER INTERFACE
+### MILESTONE 6 — TELEPHONY LAYER
 
-Build the complete Voca browser UI. By the end of this milestone, a user opens localhost:3000, selects a persona, clicks connect, speaks, and hears Voca respond — with live transcript, language badge, and persona switching all working visually.
-
----
-
-### Checkpoint 5.1 — Install Fonts and Global Styles
-
-File: `frontend/styles/globals.css` and `frontend/app/layout.tsx`
-
-Install the required fonts via next/font or Google Fonts import:
-- **Syne** — headings and display text
-- **DM Mono** — transcript text
-- **Satoshi** — UI body text (use Inter as fallback if Satoshi unavailable via Google Fonts)
-
-Set up CSS variables in `globals.css`:
-
-```css
-:root {
-  --bg: #080A0F;
-  --bg-surface: #0F1117;
-  --bg-elevated: #161B24;
-  --border: rgba(255,255,255,0.08);
-  --text-primary: #F0F2F5;
-  --text-secondary: #8B92A0;
-  --text-mono: #A8B5C8;
-
-  /* Persona accent — updated via JS */
-  --accent: #00C2B8;
-  --accent-glow: rgba(0, 194, 184, 0.15);
-  --orb-color: #00C2B8;
-}
-```
-
-Set body background to `var(--bg)`, default font to Satoshi/Inter.
-
-**Verification:** `npm run dev` — page loads at localhost:3000 with dark background. No console errors.
+By the end of this milestone, calling the Twilio phone number must connect to Voca's brain, speak naturally, and hear Murf Falcon's voice respond — over a real phone call.
 
 ---
 
-### Checkpoint 5.2 — WebSocket Client Library
+### Checkpoint 6.1 — Install Audio Conversion Dependencies
 
-File: `frontend/lib/websocket.ts`
+Twilio streams mulaw 8kHz audio. Deepgram needs PCM 16kHz. Murf returns WAV 24kHz. Conversion is required at every step.
 
-Build a `VocaWebSocket` class:
+Install required packages:
 
-```typescript
-type MessageHandler = (message: VocaMessage) => void
-type AudioHandler = (chunk: ArrayBuffer) => void
-
-interface VocaMessage {
-  type: 'persona_loaded' | 'transcript' | 'language_changed' | 'response' | 'escalation' | 'error'
-  [key: string]: unknown
-}
-
-class VocaWebSocket {
-  connect(personaId: string, onMessage: MessageHandler, onAudio: AudioHandler): void
-  disconnect(): void
-  sendAudio(chunk: ArrayBuffer): void
-  sendEndOfSpeech(): void
-  switchPersona(personaId: string): void
-  get isConnected(): boolean
-  get latencyMs(): number   // tracks round-trip time
-}
+```bash
+pip install audioop-lts
 ```
 
-- Connects to `ws://localhost:8000/ws/browser/{personaId}`
-- Routes binary frames to `onAudio` handler
-- Routes JSON frames to `onMessage` handler
-- Tracks latency: timestamp when `end_of_speech` sent, timestamp when first `response` arrives
-- Reconnects automatically on unexpected disconnect (max 3 attempts)
-- Exports a singleton: `export const vocaWS = new VocaWebSocket()`
+Note: `audioop` was removed from Python 3.13+ stdlib. `audioop-lts` is the drop-in replacement. Import it as `import audioop`.
 
-**Verification:** Import in a test component, call connect, confirm no TypeScript errors. `npm run dev` must compile clean.
+Also install ngrok for local tunneling (needed for Twilio webhooks to reach localhost):
 
----
-
-### Checkpoint 5.3 — useVoice Hook
-
-File: `frontend/hooks/useVoice.ts`
-
-Build a `useVoice` hook that handles mic capture and audio streaming:
-
-```typescript
-interface UseVoiceReturn {
-  isListening: boolean
-  startListening: () => Promise<void>
-  stopListening: () => void
-  audioLevel: number        // 0–1, for orb animation
-  error: string | null
-}
-
-export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void): UseVoiceReturn
+```bash
+npm install -g ngrok
 ```
-
-- Uses `navigator.mediaDevices.getUserMedia({ audio: true })`
-- Uses `AudioContext` + `ScriptProcessorNode` or `AudioWorkletNode` to capture PCM chunks
-- Sends 4096-sample chunks to `onAudioChunk` as they arrive — do not buffer
-- Computes `audioLevel` as RMS of the current chunk — used to animate the orb
-- Calls `onAudioChunk` only while `isListening === true`
-- On `stopListening`: sends the final chunk if any, then triggers `end_of_speech`
-- Cleans up AudioContext on unmount
-
-**Verification:** `npm run dev` — hook compiles with no TypeScript errors.
-
----
-
-### Checkpoint 5.4 — usePersona Hook
-
-File: `frontend/hooks/usePersona.ts`
-
-Build a `usePersona` hook:
-
-```typescript
-interface Persona {
-  id: string
-  name: string
-  display_name: string
-  ui_config: {
-    accent_color: string
-    orb_color: string
-    label: string
-  }
-}
-
-interface UsePersonaReturn {
-  personas: Persona[]
-  activePersona: Persona | null
-  setActivePersona: (persona: Persona) => void
-  isLoading: boolean
-}
-
-export function usePersona(): UsePersonaReturn
-```
-
-- Fetches `http://localhost:8000/personas` on mount
-- Defaults to first persona (apex) as active
-- When `setActivePersona` is called: updates CSS variables `--accent`, `--accent-glow`, `--orb-color` on `:root` to match new persona's ui_config colors
-- Accent glow is always the accent color at 15% opacity
-
-**Verification:** `npm run dev` — hook fetches personas and returns correct data. No TypeScript errors.
-
----
-
-### Checkpoint 5.5 — VoiceOrb Component
-
-File: `frontend/components/VoiceOrb.tsx`
-
-The centrepiece of the UI. A large animated orb with 4 states:
-
-```typescript
-type OrbState = 'idle' | 'listening' | 'processing' | 'speaking'
-
-interface VoiceOrbProps {
-  state: OrbState
-  audioLevel: number   // 0–1, drives size pulse when listening
-  onClick: () => void
-  color: string        // matches --orb-color CSS var
-}
-```
-
-**Visual spec:**
-- Base size: 200px diameter circle
-- Background: radial gradient from `var(--orb-color)` at 30% opacity center to transparent edge
-- Border: 1px solid `var(--orb-color)` at 40% opacity
-- Inner glow: box-shadow `0 0 40px var(--accent-glow)`
-
-**State animations (use Framer Motion):**
-- `idle`: slow pulse — scale oscillates between 0.97 and 1.03 over 3s, ease in-out, infinite
-- `listening`: scale = `1 + (audioLevel * 0.3)` — orb breathes with the user's voice in real time
-- `processing`: rotate a subtle arc/spinner ring around the orb — indicates thinking
-- `speaking`: 3 concentric ripple rings expand outward and fade — new ring every 600ms
-
-**Click behavior:**
-- If idle → start listening (onClick)
-- If listening → stop listening (onClick)
-- Processing and speaking states are non-interactive
-
-**Center icon:**
-- Idle: microphone icon, `var(--text-secondary)` color
-- Listening: animated waveform bars or solid mic, `var(--orb-color)` color
-- Processing: small animated dots
-- Speaking: speaker/sound wave icon, `var(--orb-color)` color
-
-**Verification:** Render `<VoiceOrb state="idle" audioLevel={0} onClick={() => {}} color="#00C2B8" />` in page.tsx. Visually confirm orb renders with correct style. Switch state prop and confirm animation changes.
-
----
-
-### Checkpoint 5.6 — PersonaSwitcher Component
-
-File: `frontend/components/PersonaSwitcher.tsx`
-
-```typescript
-interface PersonaSwitcherProps {
-  personas: Persona[]
-  activePersona: Persona | null
-  onSwitch: (persona: Persona) => void
-  disabled: boolean   // true when a conversation is in progress
-}
-```
-
-**Visual spec:**
-- Horizontal pill row at the top of the page
-- Each pill: rounded-full, `var(--bg-elevated)` background, `var(--text-secondary)` text
-- Active pill: `var(--accent)` background, white text, subtle glow shadow
-- Transition: 300ms ease, smooth color crossfade
-- Disabled state: 50% opacity, cursor not-allowed
-- Shows persona label (Hospital / University / Startup) — not full display_name
-
-**Verification:** Renders all 3 persona pills. Clicking switches active pill with animation. `npm run dev` clean.
-
----
-
-### Checkpoint 5.7 — Transcript Component
-
-File: `frontend/components/Transcript.tsx`
-
-```typescript
-interface TranscriptEntry {
-  role: 'user' | 'voca'
-  text: string
-  language: string
-  timestamp: number
-}
-
-interface TranscriptProps {
-  entries: TranscriptEntry[]
-}
-```
-
-**Visual spec:**
-- Monospaced font (`DM Mono`)
-- `var(--text-mono)` color
-- User entries: right-aligned, `var(--bg-elevated)` background pill
-- Voca entries: left-aligned, no background, slightly dimmer color
-- Each new entry animates in: fade + slide up, 200ms
-- Words stream in one by one with 20ms stagger (use Framer Motion's `staggerChildren`)
-- Max height: 40vh, scrolls automatically to latest entry
-- Empty state: subtle centered text "Start speaking to begin"
-
-**Verification:** Render with mock entries. Confirm layout and animation. `npm run dev` clean.
-
----
-
-### Checkpoint 5.8 — LanguageBadge and StatusBar Components
-
-**File: `frontend/components/LanguageBadge.tsx`**
-
-```typescript
-interface LanguageBadgeProps {
-  language: string   // ISO code: 'en', 'ta', 'hi'
-  changed: boolean   // true for 2 seconds after a language switch
-}
-```
-
-- Small pill, top-right corner of the main UI
-- Shows full language name: `en` → "English", `ta` → "Tamil", `hi` → "Hindi"
-- `changed` state: brief highlight pulse animation for 2 seconds, then returns to normal
-- Background: `var(--bg-elevated)`, text: `var(--text-secondary)`
-- When `changed`: background briefly flashes to `var(--accent)` at 30% opacity
-
-**File: `frontend/components/StatusBar.tsx`**
-
-```typescript
-interface StatusBarProps {
-  connected: boolean
-  latencyMs: number
-  personaLabel: string
-}
-```
-
-- Fixed bottom bar, full width, height 32px
-- Background: `var(--bg-surface)`, border-top: `var(--border)`
-- Left: connection dot (green when connected, red when not) + "Connected" / "Disconnected"
-- Center: active persona label
-- Right: latency in ms — e.g. "342ms" — only shown when connected
-- Font: `DM Mono`, small size
-
-**Verification:** Both render correctly. `npm run dev` clean.
-
----
-
-### Checkpoint 5.9 — Main Page Assembly
-
-File: `frontend/app/page.tsx`
-
-Wire all components together into the complete Voca interface:
-
-**Layout:**
-```
-┌─────────────────────────────────────┐
-│  [Aura] [Nova] [Apex]   [EN badge]  │  ← PersonaSwitcher + LanguageBadge
-│                                     │
-│           ◉  VoiceOrb               │  ← centered, large
-│                                     │
-│  User: Hello I want to book...      │  ← Transcript
-│  Voca: Of course! Let me help...    │
-│                                     │
-├─────────────────────────────────────┤
-│  ● Connected  |  Aura  |  342ms     │  ← StatusBar
-└─────────────────────────────────────┘
-```
-
-**Behaviour:**
-1. On mount: fetch personas, set Apex as default active persona, update CSS vars
-2. User clicks orb → `startListening()` → stream audio to WebSocket
-3. User clicks orb again → `stopListening()` → send `end_of_speech`
-4. On `transcript` message → add user entry to transcript
-5. On `response` message → add Voca entry to transcript
-6. On `language_changed` message → update LanguageBadge, trigger `changed` animation
-7. On binary audio frame → queue and play through Web Audio API
-8. On `escalation` message → show a subtle banner above the transcript
-9. On `persona_loaded` after switch → update CSS vars, animate orb color transition
-10. Orb state machine:
-    - idle → listening (on click)
-    - listening → processing (on end_of_speech sent)
-    - processing → speaking (on first audio chunk received)
-    - speaking → idle (on audio playback complete)
-
-**Audio playback:**
-- Collect binary WAV chunks into a buffer
-- When all chunks received (detect via response message arriving after binary frames): decode and play via `AudioContext.decodeAudioData()`
-- Do not play chunks individually — collect then play
 
 **Verification:**
-- `npm run dev` — page loads, 3 persona pills visible, orb renders centered
-- Clicking orb changes its state visually
-- PersonaSwitcher switches active pill and orb color changes smoothly
-- No TypeScript errors, no console errors
+```bash
+python -c "import audioop; print('audioop OK')"
+```
+Must print `audioop OK`.
 
 ---
 
-### Checkpoint 5.10 — Full Live Demo Verification
+### Checkpoint 6.2 — Audio Conversion Utility
 
-Test the complete end-to-end browser experience:
+File: `backend/services/audio_utils.py`
 
-1. Backend running: `uvicorn main:app --reload` in `D:\Projects\voca\backend`
-2. Frontend running: `npm run dev` in `D:\Projects\voca\frontend`
-3. Open `http://localhost:3000`
-4. Select Aura persona
-5. Click orb, speak: "Hello, I'd like to book an appointment"
-6. Confirm: transcript shows your speech, Voca responds with audio, transcript shows Voca's reply
-7. Switch to Apex persona mid-session
-8. Confirm: orb color changes to indigo, persona switcher updates
-9. Speak in Tamil (or type a Tamil phrase as a test)
-10. Confirm: language badge updates to Tamil
+Build audio conversion functions used by the telephony pipeline:
 
-**Definition of done:** Full voice conversation works in the browser. Persona switch works live. Language badge updates. No errors in console.
+```python
+def mulaw_to_pcm16(mulaw_bytes: bytes) -> bytes:
+    """Convert mulaw 8kHz bytes to PCM16 8kHz bytes."""
+
+def pcm16_8k_to_16k(pcm_bytes: bytes) -> bytes:
+    """Upsample PCM16 from 8kHz to 16kHz for Deepgram."""
+
+def wav_24k_to_mulaw_8k(wav_bytes: bytes) -> bytes:
+    """Convert WAV 24kHz (from Murf) to mulaw 8kHz for Twilio.
+    Steps: strip WAV header → resample 24k→8k → PCM→mulaw encode"""
+```
+
+All functions use `audioop` for conversion. No external libraries.
+
+**Verification:**
+```bash
+python -c "
+from services.audio_utils import mulaw_to_pcm16, pcm16_8k_to_16k, wav_24k_to_mulaw_8k
+# Test with synthetic silence (zero bytes)
+mulaw_silence = bytes([0xFF] * 160)  # 20ms of mulaw silence
+pcm = mulaw_to_pcm16(mulaw_silence)
+pcm16k = pcm16_8k_to_16k(pcm)
+print(f'mulaw→pcm: {len(mulaw_silence)} → {len(pcm)} bytes')
+print(f'8k→16k: {len(pcm)} → {len(pcm16k)} bytes')
+print('Audio utils OK')
+"
+```
+Must print byte counts and `Audio utils OK`.
 
 ---
 
-## Constraints For This Session
+### Checkpoint 6.3 — Twilio Incoming Call Webhook
 
-- Do NOT build Twilio telephony yet (Milestone 6)
-- Do NOT build session logging or WhatsApp yet (Milestone 7)
-- Do NOT build the dashboard page yet
-- Focus entirely on the main page voice interface
+File: `backend/api/routes/telephony.py`
+
+Build the TwiML webhook endpoint that Twilio hits when a call comes in:
+
+**`POST /telephony/incoming`**
+
+- Accepts Twilio's form-encoded POST request
+- Reads `To` parameter to determine which Twilio number was called
+- Maps number to persona (or defaults to `apex` if no mapping found)
+- Returns TwiML XML response that:
+  - Greets the caller with a brief `<Say>` message using a natural voice
+  - Opens a `<Connect><Stream>` pointing to `wss://{host}/ws/telephony/{persona_id}`
+  - Sets `track="inbound_track"` on the Stream
+
+TwiML response format:
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="wss://{host}/ws/telephony/{persona_id}">
+      <Parameter name="persona_id" value="{persona_id}"/>
+    </Stream>
+  </Connect>
+</Response>
+```
+
+- `host` must be read from a `PUBLIC_URL` environment variable (set to ngrok URL during demo)
+- Add `PUBLIC_URL` to `config.py` and `.env`
+- Response Content-Type must be `application/xml`
+
+**`GET /telephony/status`** — health check returning `{"telephony": "ready", "number": "<TWILIO_PHONE_NUMBER>"}`
+
+**Verification:**
+```bash
+curl -X POST http://localhost:8000/telephony/incoming \
+  -d "To=%2B15551234567&From=%2B919876543210&CallSid=CA123"
+```
+Must return valid TwiML XML with a `<Stream url="wss://...">` element.
 
 ---
 
-## Code Quality Standards
+### Checkpoint 6.4 — Telephony WebSocket Handler
 
-- TypeScript strict mode — no `any`, no `@ts-ignore`
-- All components have proper prop interfaces
-- Framer Motion for all animations — no CSS transitions for state changes
-- Web Audio API for all audio — no `<audio>` element hacks
-- No inline styles — use Tailwind classes and CSS variables
-- Components are self-contained — no prop drilling more than 2 levels deep
+File: `backend/api/routes/telephony.py`
+
+Build the WebSocket endpoint at `/ws/telephony/{persona_id}` that handles the Twilio Media Stream:
+
+**Connection lifecycle:**
+1. On WebSocket connect: create `VocaPipeline` for the persona
+2. Wait for Twilio `start` event — extract `streamSid`, log call start
+3. Send Voca's greeting audio immediately:
+   - Generate greeting via Gemini: "Hello, you've reached [org name]. How can I help you today?"
+   - Convert to Murf TTS → WAV → mulaw 8kHz
+   - Send to Twilio as base64 media event
+4. Accumulate incoming `media` events — decode base64 → mulaw bytes
+5. Use VAD (Voice Activity Detection) to detect end of speech:
+   - Simple energy-based VAD: if 600ms of silence detected after speech, treat as end of utterance
+   - Silence threshold: RMS of mulaw chunk below 200
+6. On end of utterance:
+   - Convert accumulated mulaw → PCM16 8kHz → PCM16 16kHz
+   - Send to Deepgram STT → get transcript
+   - Send transcript to Gemini via pipeline → get response text
+   - Convert response to Murf TTS → WAV → mulaw 8kHz
+   - Stream mulaw back to Twilio as base64 media events
+   - Send `mark` event when done
+7. On Twilio `stop` event: log call end, close pipeline
+
+**Escalation handling:**
+- If `pipeline.escalation_needed` is True after a turn:
+  - Speak the persona's `escalation_message` via Murf
+  - Send a WhatsApp notification to the business owner (Milestone 7 stub — just log for now)
+  - End the call gracefully
+
+**Error handling:**
+- If Deepgram or Gemini fails mid-call: speak a fallback message via Murf ("I'm having trouble understanding, please hold")
+- Never go silent — Voca must always say something
+
+**Verification:** Cannot fully verify without ngrok + Twilio. Instead, create a unit test:
+```bash
+python -c "
+import asyncio
+from services.audio_utils import mulaw_to_pcm16, pcm16_8k_to_16k
+from services.pipeline import VocaPipeline
+
+async def test():
+    p = VocaPipeline('apex')
+    print(f'Pipeline ready for telephony: {p.persona.name}')
+    # Simulate audio processing
+    mulaw_silence = bytes([0xFF] * 1600)  # 200ms silence
+    pcm = mulaw_to_pcm16(mulaw_silence)
+    pcm16k = pcm16_8k_to_16k(pcm)
+    print(f'Audio conversion pipeline: {len(mulaw_silence)} → {len(pcm16k)} bytes')
+    print('Telephony pipeline ready')
+
+asyncio.run(test())
+"
+```
+
+---
+
+### Checkpoint 6.5 — Number-to-Persona Routing
+
+File: `backend/api/routes/telephony.py`
+
+Add a `PERSONA_PHONE_MAP` at the top of the telephony router:
+
+```python
+# Maps Twilio phone numbers to persona IDs
+# Add your Twilio numbers here
+PERSONA_PHONE_MAP: dict[str, str] = {
+    # "+15551234567": "aura",  # Hospital line
+    # "+15557654321": "nova",  # University line
+}
+DEFAULT_PERSONA = "apex"
+
+def get_persona_for_number(phone_number: str) -> str:
+    return PERSONA_PHONE_MAP.get(phone_number, DEFAULT_PERSONA)
+```
+
+Also add a `POST /telephony/configure` endpoint that allows updating the map at runtime:
+```json
+{"phone_number": "+15551234567", "persona_id": "aura"}
+```
+
+This means on demo day, you can assign specific numbers to specific personas without restarting the backend.
+
+**Verification:**
+```bash
+curl -X POST http://localhost:8000/telephony/configure \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+15551234567", "persona_id": "aura"}'
+```
+Must return `{"success": true, "phone_number": "+15551234567", "persona_id": "aura"}`.
+
+---
+
+### Checkpoint 6.6 — Register Routes in main.py
+
+File: `backend/main.py`
+
+Ensure the telephony router is registered:
+
+```python
+from api.routes.telephony import router as telephony_router
+app.include_router(telephony_router, prefix="/telephony")
+app.include_router(telephony_router)  # for /ws/telephony WebSocket (no prefix)
+```
+
+Add `PUBLIC_URL` to `backend/config.py`:
+```python
+public_url: str = "http://localhost:8000"
+```
+
+Add to `.env`:
+```
+PUBLIC_URL=http://localhost:8000
+```
+
+**Verification:**
+```bash
+uvicorn main:app --reload
+curl http://localhost:8000/telephony/status
+```
+Must return `{"telephony": "ready"}`.
+
+---
+
+### Checkpoint 6.7 — ngrok Tunnel Setup
+
+This is the bridge between Twilio (cloud) and your local FastAPI server.
+
+Start ngrok:
+```bash
+ngrok http 8000
+```
+
+Copy the `https://xxxx.ngrok.io` URL. Update `.env`:
+```
+PUBLIC_URL=https://xxxx.ngrok.io
+```
+
+In the Twilio Console:
+1. Go to Phone Numbers → Manage → Active Numbers
+2. Click your number
+3. Under Voice & Fax → A Call Comes In → Webhook:
+   - Set to: `https://xxxx.ngrok.io/telephony/incoming`
+   - Method: HTTP POST
+4. Save
+
+**Verification:** Call the Twilio number from your phone. The call should connect. Even if audio isn't working yet, the call connecting confirms the webhook is wired correctly.
+
+---
+
+### Checkpoint 6.8 — End-to-End Phone Call Test
+
+With backend running, ngrok tunneling, and Twilio configured:
+
+1. Call the Twilio number
+2. Confirm Voca answers with a greeting (Murf voice)
+3. Speak a sentence — confirm Voca responds intelligently
+4. Speak in Tamil — confirm Voca responds in Tamil
+5. Say something that triggers escalation — confirm escalation message is spoken
+
+**Definition of done:** Full natural voice conversation works over a real phone call. Murf Falcon's voice answers. The conversation feels real.
+
+---
+
+## Constraints
+
+- Do NOT build WhatsApp notifications yet (Milestone 7)
+- Do NOT build session logging yet (Milestone 7)
+- Focus entirely on: audio conversion → TwiML webhook → Media Streams WebSocket → full phone call working
+
+---
+
+## Code Quality
+
+- `audioop` for all audio conversion — no ffmpeg, no subprocess
+- All WebSocket handling is async
+- mulaw↔PCM conversion is in `audio_utils.py` — not inline in the route
+- Twilio credentials loaded from config, never hardcoded
 
 ---
 
 ## If You Hit a Problem
 
 1. State the problem in one sentence
-2. Give two solutions with tradeoffs
+2. Two solutions with tradeoffs
 3. Recommend one
 4. Wait for confirmation
 
@@ -416,4 +322,4 @@ Test the complete end-to-end browser experience:
 
 ## After This Milestone
 
-Once Milestone 5 is verified end-to-end, the next session targets **Milestone 6 — Telephony Layer**.
+Once a real phone call works end-to-end, the next session targets **Milestone 7 — Post-Call Intelligence**.

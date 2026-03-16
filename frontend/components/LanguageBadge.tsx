@@ -1,40 +1,40 @@
+'use client';
+
 import React from 'react';
 import { motion } from 'framer-motion';
 
-interface LanguageBadgeProps {
-  language: string;
-  changed: boolean;
-}
-
-const langMap: Record<string, string> = {
+const LANGUAGE_MAP: Record<string, string> = {
   en: 'English',
   ta: 'Tamil',
   hi: 'Hindi',
+  te: 'Telugu',
+  kn: 'Kannada',
+  ml: 'Malayalam',
 };
 
-export function LanguageBadge({ language, changed }: LanguageBadgeProps) {
-  const displayLang = langMap[language] || language.toUpperCase();
+export interface LanguageBadgeProps {
+  language: string;
+  changed: boolean;
+  accentColor: string;
+}
+
+export default function LanguageBadge({ language, changed, accentColor }: LanguageBadgeProps) {
+  const code = language.split('-')[0].toLowerCase();
+  const displayName = LANGUAGE_MAP[code] || 'English';
 
   return (
     <motion.div
-      className={`px-3 py-1 rounded-full text-xs font-medium tracking-wide font-sans shadow-sm`}
-      initial={false}
+      initial={{ backgroundColor: 'rgba(255, 255, 255, 0.03)', borderColor: 'rgba(255, 255, 255, 0.08)' }}
       animate={{
-        backgroundColor: changed ? 'var(--accent)' : 'var(--bg-elevated)',
-        color: changed ? '#FFFFFF' : 'var(--text-secondary)',
-        opacity: changed ? [1, 0.8, 1] : 1,
+        backgroundColor: changed ? `${accentColor}33` : 'rgba(255, 255, 255, 0.03)',
+        borderColor: changed ? accentColor : 'rgba(255, 255, 255, 0.08)',
+        color: changed ? accentColor : '#A8B5C8',
+        scale: changed ? [1, 1.05, 1] : 1
       }}
-      transition={{ 
-        backgroundColor: { duration: 0.3 },
-        color: { duration: 0.3 },
-        opacity: { duration: 0.5, repeat: changed ? 3 : 0 }
-      }}
-      style={{
-        backgroundColor: 'var(--bg-elevated)',
-        color: 'var(--text-secondary)'
-      }}
+      transition={{ duration: 0.4, ease: 'easeOut' }}
+      className="px-3 py-1.5 text-xs font-medium tracking-wide rounded-full border backdrop-blur-md"
     >
-      {displayLang}
+      {displayName}
     </motion.div>
   );
 }

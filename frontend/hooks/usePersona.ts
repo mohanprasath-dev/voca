@@ -36,6 +36,7 @@ export function usePersona(): UsePersonaReturn {
     
     // Set accent-glow to 15% opacity
     const rgb = hexToRgb(persona.ui_config.accent_color);
+    root.style.setProperty('--accent-rgb', rgb);
     root.style.setProperty('--accent-glow', `rgba(${rgb}, 0.15)`);
   };
 

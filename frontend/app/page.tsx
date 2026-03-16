@@ -4,11 +4,12 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { usePersona } from '../hooks/usePersona';
 import { useVoice } from '../hooks/useVoice';
 import { vocaWS, VocaMessage } from '../lib/websocket';
-import { VoiceOrb, OrbState } from '../components/VoiceOrb';
+import VoiceOrb, { OrbState } from '../components/VoiceOrb';
 import { PersonaSwitcher } from '../components/PersonaSwitcher';
 import { Transcript, TranscriptEntry } from '../components/Transcript';
-import { LanguageBadge } from '../components/LanguageBadge';
+import LanguageBadge from '../components/LanguageBadge';
 import { StatusBar } from '../components/StatusBar';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function VocaPage() {
   const { personas, activePersona, setActivePersona, isLoading } = usePersona();
@@ -19,7 +20,6 @@ export default function VocaPage() {
   const [languageChanged, setLanguageChanged] = useState<boolean>(false);
   const [escalation, setEscalation] = useState<string | null>(null);
   
-  // Connection and latency state
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [latencyMs, setLatencyMs] = useState<number>(0);
 
@@ -30,13 +30,13 @@ export default function VocaPage() {
     vocaWS.sendAudio(chunk);
   }, []);
 
-  const { isListening, startListening, stopListening, audioLevel } = useVoice(handleAudioChunk);
+  const { startListening, stopListening, audioLevel } = useVoice(handleAudioChunk);
 
   const playAudioSequence = async () => {
     if (audioChunksRef.current.length === 0) return;
 
     if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     }
 
     const totalLength = audioChunksRef.current.reduce((acc, chunk) => acc + chunk.byteLength, 0);
@@ -74,7 +74,6 @@ export default function VocaPage() {
       activePersona.id,
       (message: VocaMessage) => {
         if (message.type === 'persona_loaded') {
-          // Persona ready
           setIsConnected(true);
         } else if (message.type === 'transcript') {
           const text = message.text as string;
@@ -92,10 +91,8 @@ export default function VocaPage() {
           setTranscriptEntries(prev => [...prev, { role: 'voca', text, language: lang, timestamp: Date.now() }]);
           setLatencyMs(vocaWS.latencyMs);
           
-          // Once response arrives, play whatever chunks we have
           playAudioSequence();
           
-          // Fallback if no chunks received
           if (audioChunksRef.current.length === 0 && orbState === 'processing') {
              setOrbState('idle');
           }
@@ -105,16 +102,14 @@ export default function VocaPage() {
       },
       (chunk: ArrayBuffer) => {
         audioChunksRef.current.push(chunk);
-        if (orbState !== 'speaking' && orbState !== 'processing') {
-          setOrbState('processing'); // Transition to processing when first chunk arrives if not already
-        }
+        setOrbState(prev => prev !== 'speaking' ? 'processing' : prev);
       }
     );
 
     return () => {
       vocaWS.disconnect();
     };
-  }, [activePersona]);
+  }, [activePersona, orbState]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -136,20 +131,34 @@ export default function VocaPage() {
     }
   };
 
-  const handlePersonaSwitch = (persona: any) => {
+  const handlePersonaSwitch = (persona: import('../hooks/usePersona').Persona) => {
     if (orbState !== 'idle') return;
     setActivePersona(persona);
     vocaWS.switchPersona(persona.id);
   };
 
   if (isLoading) {
-    return <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center text-[var(--text-secondary)]">Loading Voca...</div>;
+    return (
+      <div className="min-h-screen bg-[#080A0F] flex items-center justify-center font-mono text-xs tracking-widest text-[#8B92A0] uppercase">
+        Initializing Core...
+      </div>
+    );
   }
 
+  const currentAccent = activePersona?.ui_config.accent_color || '#00C2B8';
+
   return (
-    <main className="min-h-screen bg-[var(--bg)] text-[var(--text-primary)] flex flex-col font-sans">
-      {/* Top Bar */}
-      <div className="w-full flex items-center justify-between p-6">
+    <motion.main 
+      className="min-h-screen flex flex-col font-sans overflow-hidden"
+      animate={{ backgroundColor: '#080A0F' }}
+      transition={{ duration: 0.4 }}
+    >
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: `radial-gradient(circle at 50% 50%, ${currentAccent}08 0%, transparent 60%)`,
+        transition: 'background 0.4s ease-in-out'
+      }} />
+
+      <div className="w-full flex items-center justify-between p-6 z-10">
         <div className="flex-1" />
         <div className="flex-1 flex justify-center">
           <PersonaSwitcher 
@@ -160,17 +169,27 @@ export default function VocaPage() {
           />
         </div>
         <div className="flex-1 flex justify-end">
-          <LanguageBadge language={currentLanguage} changed={languageChanged} />
+          <LanguageBadge 
+            language={currentLanguage} 
+            changed={languageChanged} 
+            accentColor={currentAccent}
+          />
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-12 pb-24 px-4">
-        {escalation && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2 rounded-lg text-sm max-w-xl text-center">
-            {escalation}
-          </div>
-        )}
+      <div className="flex-1 flex flex-col items-center justify-center gap-16 pb-24 px-4 z-10">
+        <AnimatePresence>
+          {escalation && (
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-red-500/10 border border-red-500/20 text-red-400 px-6 py-3 rounded-2xl text-xs font-mono max-w-xl text-center backdrop-blur-md"
+            >
+              {escalation}
+            </motion.div>
+          )}
+        </AnimatePresence>
         
         <VoiceOrb 
           state={orbState} 
@@ -180,16 +199,16 @@ export default function VocaPage() {
         />
 
         <div className="w-full max-w-3xl flex-1 flex flex-col justify-end">
-          <Transcript entries={transcriptEntries} />
+          <Transcript entries={transcriptEntries} accentColor={currentAccent} />
         </div>
       </div>
 
-      {/* Status Bar */}
       <StatusBar 
         connected={isConnected} 
         latencyMs={latencyMs} 
         personaLabel={activePersona?.ui_config.label || ''} 
+        accentColor={currentAccent}
       />
-    </main>
+    </motion.main>
   );
 }

@@ -1,4 +1,7 @@
+'use client';
+
 import React from 'react';
+import { motion } from 'framer-motion';
 import { Persona } from '../hooks/usePersona';
 
 interface PersonaSwitcherProps {
@@ -12,25 +15,47 @@ export function PersonaSwitcher({ personas, activePersona, onSwitch, disabled }:
   if (personas.length === 0) return null;
 
   return (
-    <div className={`flex items-center justify-center gap-2 p-1 bg-[var(--bg-surface)] rounded-full border border-[var(--border)] transition-opacity ${disabled ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+    <motion.div 
+      className="flex items-center gap-1 p-1 rounded-full border backdrop-blur-md z-10"
+      animate={{
+        backgroundColor: 'rgba(15, 17, 23, 0.6)',
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        opacity: disabled ? 0.5 : 1
+      }}
+      transition={{ duration: 0.4 }}
+      style={{ pointerEvents: disabled ? 'none' : 'auto' }}
+    >
       {personas.map((persona) => {
         const isActive = activePersona?.id === persona.id;
+        const color = persona.ui_config.accent_color;
+
         return (
-          <button
+          <motion.button
             key={persona.id}
-            onClick={() => !disabled && onSwitch(persona)}
-            disabled={disabled}
-            className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-300 ease-in-out font-sans`}
-            style={{
-              backgroundColor: isActive ? 'var(--accent)' : 'transparent',
-              color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
-              boxShadow: isActive ? '0 0 12px var(--accent-glow)' : 'none',
+            onClick={() => onSwitch(persona)}
+            className="relative px-5 py-2 text-xs font-medium rounded-full outline-none"
+            animate={{
+              color: isActive ? '#FFFFFF' : '#8B92A0'
             }}
+            transition={{ duration: 0.4 }}
           >
-            {persona.ui_config.label || persona.name}
-          </button>
+            {isActive && (
+              <motion.div
+                layoutId="activePersonaPill"
+                className="absolute inset-0 rounded-full"
+                initial={false}
+                animate={{
+                  backgroundColor: color,
+                  boxShadow: `0 0 20px 2px ${color}40`
+                }}
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                style={{ zIndex: -1 }}
+              />
+            )}
+            <span className="relative z-10">{persona.ui_config.label || persona.name}</span>
+          </motion.button>
         );
       })}
-    </div>
+    </motion.div>
   );
 }
