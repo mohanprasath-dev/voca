@@ -6,8 +6,8 @@
 
 ## Build Status
 - [x] Milestone 1 — Foundation ✅
-- [ ] Milestone 2 — Voice Pipeline Core ← CURRENT
-- [ ] Milestone 3 — Persona Engine
+- [x] Milestone 2 — Voice Pipeline Core ✅ (services built, Murf verified 200/80572 bytes)
+- [ ] Milestone 3 — Persona Engine ← CURRENT
 - [ ] Milestone 4 — Multilingual Intelligence
 - [ ] Milestone 5 — Browser Interface
 - [ ] Milestone 6 — Telephony Layer
@@ -24,6 +24,15 @@
 - Frontend runs on: `http://localhost:3000`
 - `/health` endpoint verified returning `{"status":"ok","version":"1.0.0"}`
 - 3 personas loaded and verified on startup
+- Murf Falcon TTS — confirmed working (HTTP 200, 80,572 bytes returned)
+- Deepgram SDK — installed, `deepgram-sdk` package
+- **Gemini SDK — use `google-genai` (new SDK), NOT `google-generativeai` (deprecated)**
+  - Import: `from google import genai`
+  - Client: `genai.Client(api_key=...)`
+  - Generate: `client.models.generate_content(model='gemini-2.5-flash', contents=...)`
+  - The old `google.generativeai` package is deprecated — do not use it anywhere
+- All packages installed in venv: fastapi, uvicorn, websockets, httpx, python-dotenv,
+  pydantic-settings, deepgram-sdk, google-genai, twilio, aiohttp
 
 ---
 
@@ -74,8 +83,8 @@ Every day, billions of phone calls go unanswered. Patients call hospitals at 2AM
 - **Runtime:** Python 3.14
 - **Framework:** FastAPI (async)
 - **Voice Output:** Murf Falcon TTS API (streaming)
-- **Voice Input:** Deepgram STT (streaming WebSocket, Nova-3 model)
-- **AI Brain:** Google Gemini Flash (gemini-2.0-flash)
+- **Voice Input:** Deepgram STT (streaming WebSocket, Nova-2 model)
+- **AI Brain:** Google Gemini Flash (`gemini-2.5-flash`) via `google-genai` SDK
 - **Telephony:** Twilio Media Streams (WebSocket)
 - **Notifications:** Twilio WhatsApp API
 - **Deployment:** Vercel Serverless (Python runtime)
@@ -108,7 +117,7 @@ voca/
 │   ├── services/
 │   │   ├── murf.py               # Murf Falcon TTS service
 │   │   ├── deepgram.py           # Deepgram STT service
-│   │   ├── gemini.py             # Gemini conversation brain
+│   │   ├── gemini.py             # Gemini brain (uses google-genai SDK)
 │   │   ├── pipeline.py           # Orchestrates murf + deepgram + gemini
 │   │   ├── persona.py            # Loads and manages persona configs
 │   │   ├── session.py            # Session logging and summary generation
@@ -188,13 +197,13 @@ Each persona is a JSON file in `/backend/personas/` with this exact structure:
     "emergency_keywords": []
   },
   "voice_config": {
-    "murf_voice_id": "...",
-    "murf_style": "...",
+    "murf_voice_id": "en-IN-rohan",
+    "murf_style": "Conversational",
     "language": "en-IN"
   },
   "ui_config": {
-    "accent_color": "#...",
-    "orb_color": "#...",
+    "accent_color": "#00C2B8",
+    "orb_color": "#00C2B8",
     "label": "Hospital"
   },
   "escalation_message": "...",
@@ -209,6 +218,7 @@ Each persona is a JSON file in `/backend/personas/` with this exact structure:
 ### Aura — Hospital Front Desk
 - **Tone:** Calm, clinical, empathetic, unhurried
 - **Accent color:** `#00C2B8` (teal)
+- **Murf voice:** `en-IN-rohan`, style: `Conversational`
 - **Handles:** Appointment booking, doctor timings, test prep instructions, report status, emergency detection
 - **Escalation trigger:** Billing disputes, complex medical queries, patient distress
 - **Emergency trigger:** Keywords like "chest pain", "unconscious", "bleeding" — immediate escalation with calm voice
@@ -216,12 +226,14 @@ Each persona is a JSON file in `/backend/personas/` with this exact structure:
 ### Nova — School / University Admin
 - **Tone:** Warm, structured, patient, encouraging
 - **Accent color:** `#F59E0B` (amber)
+- **Murf voice:** `en-IN-priya`, style: `Conversational`
 - **Handles:** Admission queries, fee structure, exam schedules, result status, course information
 - **Escalation trigger:** Scholarship appeals, disciplinary queries, parent complaints
 
 ### Apex — Startup Customer Support
 - **Tone:** Sharp, fast, solution-oriented, friendly but efficient
 - **Accent color:** `#6366F1` (indigo)
+- **Murf voice:** `en-IN-arjun`, style: `Conversational`
 - **Handles:** Product FAQs, billing queries, feature requests, bug reports, onboarding help
 - **Escalation trigger:** Refund requests, data issues, legal queries
 
@@ -275,6 +287,7 @@ TWILIO_PHONE_NUMBER=
 8. **Every component is named and purposeful** — no `Component1.tsx` or `index.tsx` dumping grounds
 9. **Mobile responsive from the start** — not retrofitted at the end
 10. **Clean git history** — one commit per milestone checkpoint, descriptive messages
+11. **Use `google-genai` SDK only** — never import from `google.generativeai`
 
 ---
 

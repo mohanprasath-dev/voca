@@ -1,31 +1,26 @@
-from typing import List, Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
 
 class VoiceConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
     murf_voice_id: str
     murf_style: str
     language: str
 
+
 class UIConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
     accent_color: str
     orb_color: str
     label: str
 
-class FAQItem(BaseModel):
-    question: str
-    answer: str
 
 class KnowledgeBase(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    faqs: List[FAQItem] = []
-    timings: dict = {}
-    escalation_keywords: List[str] = []
-    emergency_keywords: List[str] = []
+    faqs: list[dict]
+    timings: dict
+    escalation_keywords: list[str]
+    emergency_keywords: list[str]
 
-class Persona(BaseModel):
-    model_config = ConfigDict(extra="allow")
+
+class PersonaConfig(BaseModel):
     id: str
     name: str
     display_name: str
@@ -35,4 +30,4 @@ class Persona(BaseModel):
     voice_config: VoiceConfig
     ui_config: UIConfig
     escalation_message: str
-    emergency_message: Optional[str] = None
+    emergency_message: str
