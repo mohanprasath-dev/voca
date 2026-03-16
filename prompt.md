@@ -8,8 +8,8 @@
 - [x] Milestone 1 — Foundation ✅
 - [x] Milestone 2 — Voice Pipeline Core ✅ (services built, Murf verified 200/80572 bytes)
 - [x] Milestone 3 — Persona Engine ✅ (3 personas, PersonaService, pipeline wired, WebSocket persona switch)
-- [ ] Milestone 4 — Multilingual Intelligence ← CURRENT
-- [ ] Milestone 5 — Browser Interface
+- [x] Milestone 4 — Multilingual Intelligence ✅ (language detection, voice switching, mid-conversation switch, en/ta/hi verified)
+- [ ] Milestone 5 — Browser Interface ← CURRENT
 - [ ] Milestone 6 — Telephony Layer
 - [ ] Milestone 7 — Post-Call Intelligence
 - [ ] Milestone 8 — Production Readiness
@@ -30,12 +30,12 @@
   - Import: `from google import genai`
   - Client: `genai.Client(api_key=...)`
   - Model: `gemini-2.5-flash`
-  - The old `google.generativeai` package is deprecated — do not use it anywhere
 - All packages installed in venv: fastapi, uvicorn, websockets, httpx, python-dotenv,
   pydantic-settings, deepgram-sdk, google-genai, twilio, aiohttp
 - Gemini response format: always starts with `[LANG:xx]` tag, stripped before TTS
 - `/personas` endpoint verified returning 3 personas, no system_prompt leakage
-- WebSocket at `/ws/browser/{persona_id}` sends `persona_loaded` on connect, supports `switch_persona`
+- WebSocket at `/ws/browser/{persona_id}` — verified working with persona_loaded, language_changed, transcript, response, escalation events
+- Multilingual: language_voice_map in all 3 personas, pipeline tracks current_language, voice switches per language
 
 ---
 
@@ -111,51 +111,76 @@ voca/
 ├── backend/
 │   ├── api/
 │   │   ├── routes/
-│   │   │   ├── browser.py        # WebSocket endpoint for browser clients
+│   │   │   ├── browser.py        # WebSocket endpoint ✅
 │   │   │   ├── telephony.py      # Twilio webhook + Media Streams endpoint
-│   │   │   └── dashboard.py      # Session logs and summaries + /personas endpoints
+│   │   │   └── dashboard.py      # /personas endpoints ✅
 │   │   └── middleware/
 │   │       ├── cors.py
 │   │       └── logging.py
 │   ├── services/
-│   │   ├── murf.py               # Murf Falcon TTS service
-│   │   ├── deepgram.py           # Deepgram STT service
-│   │   ├── gemini.py             # Gemini brain (uses google-genai SDK)
-│   │   ├── pipeline.py           # Orchestrates murf + deepgram + gemini
-│   │   ├── persona.py            # Loads and manages persona configs (singleton)
-│   │   ├── session.py            # Session logging and summary generation
-│   │   └── whatsapp.py           # Twilio WhatsApp notification service
+│   │   ├── murf.py               # Murf Falcon TTS service ✅
+│   │   ├── deepgram.py           # Deepgram STT service ✅
+│   │   ├── gemini.py             # Gemini brain ✅ (google-genai, language detection)
+│   │   ├── pipeline.py           # Orchestrator ✅ (language state, voice switching)
+│   │   ├── persona.py            # PersonaService singleton ✅
+│   │   ├── session.py            # Session logging
+│   │   └── whatsapp.py           # Twilio WhatsApp
 │   ├── personas/
-│   │   ├── aura.json             # Hospital front desk persona ✅
-│   │   ├── nova.json             # School/university admin persona ✅
-│   │   └── apex.json             # Startup customer support persona ✅
+│   │   ├── aura.json             ✅ (with language_voice_map)
+│   │   ├── nova.json             ✅ (with language_voice_map)
+│   │   └── apex.json             ✅ (with language_voice_map)
 │   ├── models/
-│   │   ├── persona.py            # Pydantic models for persona schema ✅
-│   │   └── session.py            # Pydantic models for session schema
-│   ├── main.py                   # FastAPI app entry point
-│   ├── config.py                 # Environment config loader
-│   └── .env                      # API keys (never commit this)
+│   │   ├── persona.py            ✅ (VoiceConfig with language_voice_map)
+│   │   └── session.py
+│   ├── main.py                   ✅
+│   ├── config.py                 ✅
+│   └── .env
 └── frontend/
     ├── app/
     │   ├── layout.tsx
-    │   ├── page.tsx               # Main Voca interface
+    │   ├── page.tsx               # Main Voca interface ← BUILD THIS
     │   └── dashboard/
     │       └── page.tsx           # Session dashboard
     ├── components/
-    │   ├── VoiceOrb.tsx          # Central animated orb — listening/speaking states
-    │   ├── PersonaSwitcher.tsx   # One-click persona selector
-    │   ├── Transcript.tsx        # Live conversation transcript
-    │   ├── LanguageBadge.tsx     # Detected language indicator
-    │   ├── SummaryPanel.tsx      # Post-conversation summary
-    │   └── StatusBar.tsx         # Connection + latency indicator
+    │   ├── VoiceOrb.tsx          # Central animated orb ← BUILD THIS
+    │   ├── PersonaSwitcher.tsx   # One-click persona selector ← BUILD THIS
+    │   ├── Transcript.tsx        # Live conversation transcript ← BUILD THIS
+    │   ├── LanguageBadge.tsx     # Detected language indicator ← BUILD THIS
+    │   ├── SummaryPanel.tsx      # Post-conversation summary ← BUILD THIS
+    │   └── StatusBar.tsx         # Connection + latency indicator ← BUILD THIS
     ├── hooks/
-    │   ├── useVoice.ts           # Mic capture + WebSocket audio streaming
-    │   └── usePersona.ts         # Persona state management
+    │   ├── useVoice.ts           # Mic capture + WebSocket audio streaming ← BUILD THIS
+    │   └── usePersona.ts         # Persona state management ← BUILD THIS
     ├── lib/
-    │   └── websocket.ts          # WebSocket client wrapper
+    │   └── websocket.ts          # WebSocket client wrapper ← BUILD THIS
     └── styles/
         └── globals.css
 ```
+
+---
+
+## WebSocket Message Protocol (Confirmed)
+
+The backend sends these JSON messages over `/ws/browser/{persona_id}`:
+
+```
+{"type": "persona_loaded", "persona_id": "...", "display_name": "...", "ui_config": {...}}
+{"type": "transcript", "text": "...", "language": "en"}
+{"type": "language_changed", "from": "en", "to": "ta"}
+{"type": "response", "text": "...", "language": "ta"}
+{"type": "escalation", "summary": "..."}
+{"type": "error", "message": "..."}
+```
+
+Binary frames = Murf TTS audio chunks (WAV format, 24000Hz sample rate)
+
+The frontend sends these messages:
+```
+{"type": "end_of_speech"}           — signals end of user audio
+{"type": "switch_persona", "persona_id": "nova"}  — switches persona
+```
+
+Binary frames from browser = raw PCM/WAV audio chunks from mic
 
 ---
 
@@ -170,31 +195,14 @@ Browser mic → WebSocket → FastAPI /ws/browser
 → WebSocket → Browser speakers
 ```
 
-### Telephony Flow
-```
-Phone call → Twilio → POST /telephony/incoming
-→ TwiML response (Media Streams WebSocket URL)
-→ Twilio streams audio → FastAPI /ws/telephony
-→ Deepgram STT → transcript
-→ Gemini (with persona system prompt + conversation history)
-→ Murf Falcon TTS → audio streamed back via Twilio
-```
-
 ---
 
 ## Multilingual Architecture
 
-This is Voca's killer feature and demo centrepiece. The multilingual system works as follows:
-
-- **Detection:** Gemini detects the language of every user message and returns `[LANG:xx]` at the start of every response
-- **State tracking:** `VocaPipeline` maintains `self.current_language` — updated every turn
-- **Murf voice switching:** When language changes, the Murf voice ID switches to match:
-  - `en` → use persona's default `murf_voice_id` (e.g. `en-IN-rohan`)
-  - `ta` (Tamil) → `ta-IN-rohan` or closest Tamil voice
-  - `hi` (Hindi) → `hi-IN-rohan` or closest Hindi voice
-- **Context preservation:** Language switch does NOT reset conversation history
-- **Mid-sentence switch:** If user switches language mid-conversation, Voca follows on the very next response
-- **Supported languages:** English (`en`), Tamil (`ta`), Hindi (`hi`) — minimum for demo
+- **Detection:** Gemini returns `[LANG:xx]` on every response
+- **Voice switching:** pipeline resolves voice from `language_voice_map` per turn
+- **Context:** language switch never resets history
+- **Supported:** English (`en`), Tamil (`ta`), Hindi (`hi`) — all verified
 
 ### Murf Voice ID Mapping
 ```
@@ -206,8 +214,6 @@ hi → hi-IN-rohan (all personas)
 ---
 
 ## Persona Schema
-
-Each persona is a JSON file in `/backend/personas/` with this exact structure:
 
 ```json
 {
@@ -249,24 +255,17 @@ Each persona is a JSON file in `/backend/personas/` with this exact structure:
 ### Aura — Hospital Front Desk
 - **Tone:** Calm, clinical, empathetic, unhurried
 - **Accent color:** `#00C2B8` (teal)
-- **Murf voice:** `en-IN-rohan`, style: `Conversational`
-- **Handles:** Appointment booking, doctor timings, test prep instructions, report status, emergency detection
-- **Escalation trigger:** Billing disputes, complex medical queries, patient distress
-- **Emergency trigger:** Keywords like "chest pain", "unconscious", "bleeding" — immediate escalation with calm voice
+- **Murf voice:** `en-IN-rohan`
 
 ### Nova — School / University Admin
 - **Tone:** Warm, structured, patient, encouraging
 - **Accent color:** `#F59E0B` (amber)
-- **Murf voice:** `en-IN-priya`, style: `Conversational`
-- **Handles:** Admission queries, fee structure, exam schedules, result status, course information
-- **Escalation trigger:** Scholarship appeals, disciplinary queries, parent complaints
+- **Murf voice:** `en-IN-priya`
 
 ### Apex — Startup Customer Support
 - **Tone:** Sharp, fast, solution-oriented, friendly but efficient
 - **Accent color:** `#6366F1` (indigo)
-- **Murf voice:** `en-IN-arjun`, style: `Conversational`
-- **Handles:** Product FAQs, billing queries, feature requests, bug reports, onboarding help
-- **Escalation trigger:** Refund requests, data issues, legal queries
+- **Murf voice:** `en-IN-arjun`
 
 ---
 
@@ -276,20 +275,20 @@ Each persona is a JSON file in `/backend/personas/` with this exact structure:
 
 **Visual identity:**
 - Background: Deep near-black (`#080A0F`) with subtle noise texture overlay
-- Typography: Display font — `Syne` or `Cabinet Grotesk` for headings. Body — `DM Mono` for transcripts, `Satoshi` for UI text
-- Central element: A large animated voice orb that pulses gently when idle, expands and breathes when listening, emits ripple waves when Voca is speaking
-- The orb color shifts per persona — teal for Aura, amber for Nova, indigo for Apex
-- Persona switcher: Horizontal pill selector at the top, smooth crossfade transition between personas including orb color, label, and background accent
-- Transcript: Appears below the orb, left-aligned, monospaced, streams in word by word
-- Language badge: Top right corner, subtle pill showing detected language
-- Latency indicator: Bottom right, small, shows ms response time
+- Typography: `Syne` or `Cabinet Grotesk` for headings. `DM Mono` for transcripts. `Satoshi` for UI text
+- Central element: Large animated voice orb — pulses when idle, breathes when listening, emits ripple waves when speaking
+- Orb color shifts per persona: teal (Aura), amber (Nova), indigo (Apex)
+- Persona switcher: Horizontal pill selector, smooth crossfade — orb color, label, and background accent all change
+- Transcript: Below orb, left-aligned, monospaced, streams word by word
+- Language badge: Top right, subtle pill showing detected language
+- Latency indicator: Bottom right, small, shows ms
 
 **Motion principles:**
 - Orb uses spring physics — never linear
-- Page load: staggered reveal, orb scales up from 0 with a subtle bloom
-- Persona switch: smooth 400ms crossfade, orb color transitions via CSS variable interpolation
-- Transcript words stream in with 20ms stagger per word
-- Speaking state: orb emits 3 concentric ripple rings, opacity fading outward
+- Page load: staggered reveal, orb scales up from 0 with bloom
+- Persona switch: 400ms crossfade, orb color via CSS variable interpolation
+- Transcript: words stream in with 20ms stagger
+- Speaking state: 3 concentric ripple rings, opacity fading outward
 
 ---
 
@@ -310,34 +309,34 @@ TWILIO_PHONE_NUMBER=
 
 1. **Never hardcode API keys.** Always load from environment via `config.py`
 2. **All backend routes are async.** No blocking calls anywhere
-3. **Streaming first.** Murf TTS and Deepgram STT must both stream — no waiting for full response
-4. **Persona is injected at session start** — not on every message. Store in session state
-5. **Conversation history maintained per session** — Gemini must have full context, not just the last message
-6. **Error states must be voiced** — if something fails, Voca says something, it doesn't go silent
+3. **Streaming first.** Murf TTS and Deepgram STT must both stream
+4. **Persona is injected at session start** — not on every message
+5. **Conversation history maintained per session**
+6. **Error states must be voiced** — Voca never goes silent
 7. **TypeScript strict mode** on the frontend — no `any` types
-8. **Every component is named and purposeful** — no `Component1.tsx` or `index.tsx` dumping grounds
-9. **Mobile responsive from the start** — not retrofitted at the end
-10. **Clean git history** — one commit per milestone checkpoint, descriptive messages
-11. **Use `google-genai` SDK only** — never import from `google.generativeai`
-12. **Language switch never resets history** — multilingual is seamless, not a new session
+8. **Every component is named and purposeful**
+9. **Mobile responsive from the start**
+10. **Clean git history** — one commit per milestone checkpoint
+11. **Use `google-genai` SDK only**
+12. **Language switch never resets history**
 
 ---
 
 ## What This Is NOT
 
 - Not a chatbot with a voice skin
-- Not a phone tree (no "press 1 for English")
+- Not a phone tree
 - Not an IVR system
 - Not a demo — a real deployable product
-- Not a single-use-case tool — it is horizontal infrastructure
+- Not a single-use-case tool — horizontal infrastructure
 
 ---
 
 ## Hackathon Context
 
-This is being built for a national-level hackathon using the Murf Falcon TTS API. The judging criteria will include innovation, practicality, scalability, and quality of demo. Voca wins by being the only submission that is positioned as infrastructure rather than a feature, demonstrated live with a real phone call and a real browser session, and switching personas and languages live on stage.
+National-level hackathon using Murf Falcon TTS API. Judged on innovation, practicality, scalability, demo quality.
 
 Demo sequence (3 minutes):
-1. Open browser. Switch persona to Aura (Hospital). Speak in Tamil. Voca responds in Tamil, handles appointment query. Switch to Apex live. English conversation. Judges see the persona change instantly.
-2. Pull out phone. Call the Twilio number on screen. Put on speaker. Speak naturally. Murf Falcon voice answers live in the room. Books something. WhatsApp confirmation arrives on screen.
+1. Open browser. Switch persona to Aura (Hospital). Speak in Tamil. Voca responds in Tamil. Switch to Apex live. English conversation. Judges see persona change instantly.
+2. Pull out phone. Call Twilio number on screen. Put on speaker. Murf Falcon voice answers live. Books something. WhatsApp confirmation arrives on screen.
 3. Close with the one-liner.

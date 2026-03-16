@@ -3,21 +3,23 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --bg: #080A0F;
+  --bg-surface: #0F1117;
+  --bg-elevated: #161B24;
+  --border: rgba(255,255,255,0.08);
+  --text-primary: #F0F2F5;
+  --text-secondary: #8B92A0;
+  --text-mono: #A8B5C8;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Persona accent — updated via JS */
+  --accent: #00C2B8;
+  --accent-glow: rgba(0, 194, 184, 0.15);
+  --orb-color: #00C2B8;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg);
+  color: var(--text-primary);
 }
 
 @layer utilities {

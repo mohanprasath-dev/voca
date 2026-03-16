@@ -2,332 +2,406 @@
 
 > Read `prompt.md` fully before starting. Every architectural decision in that file is final.
 > This file tells you what to build RIGHT NOW.
-> Milestones 1, 2, and 3 are complete. Do not touch anything from those milestones.
+> Milestones 1–4 are complete. Do not touch anything from those milestones.
 
 ---
 
 ## Your Role
 
-You are a senior full-stack engineer building Voca — a world-class real-time voice AI platform. You write clean, production-grade async Python. You build each checkpoint fully before moving to the next. You never skip verification steps.
+You are a senior full-stack engineer and UI designer building Voca's browser interface. You write clean TypeScript, production-grade React, and world-class UI. Every component is purposeful. Every animation has intention. This UI must be memorable — not generic.
 
 ---
 
 ## Environment (Confirmed Working)
 
-- Python 3.14
-- Virtual env: `D:\Projects\voca\.venv\` — always activate before running
-- Backend: `D:\Projects\voca\backend\`
+- Frontend: `D:\Projects\voca\frontend\`
+- Frontend URL: `http://localhost:3000`
 - Backend URL: `http://localhost:8000`
-- Activate command: `d:\Projects\voca\.venv\Scripts\Activate.ps1`
-- Gemini SDK: `google-genai` — import as `from google import genai`, model: `gemini-2.5-flash`
-- **DO NOT use `google.generativeai` — it is deprecated and will error**
+- Stack: Next.js 14 (App Router), TypeScript, Tailwind CSS, Framer Motion
+- Run frontend: `cd D:\Projects\voca\frontend && npm run dev`
 
 ---
 
 ## How to Work
 
-1. **Read `prompt.md` fully before starting**
-2. **Build one checkpoint at a time** — do not jump ahead
-3. **Run the verification step after every checkpoint** before moving on
-4. **All Python must be async** — no blocking calls anywhere
-5. **If a verification fails, fix it before proceeding**
+1. **Read `prompt.md` fully** — especially the UI Design Direction and WebSocket Message Protocol sections
+2. **Build one checkpoint at a time**
+3. **Run `npm run dev` and visually verify in browser** after each checkpoint
+4. **TypeScript strict mode** — no `any` types, no suppressed errors
+5. **Mobile responsive from the start** — test at 375px width too
 
 ---
 
 ## Current Session Target
 
-### MILESTONE 4 — MULTILINGUAL INTELLIGENCE
+### MILESTONE 5 — BROWSER INTERFACE
 
-This is Voca's killer feature and the centrepiece of the hackathon demo. By the end of this milestone, Voca must detect the caller's language on every turn, respond in the same language, switch Murf voices to match, and handle mid-conversation language switches seamlessly — without losing conversation context.
-
-The demo moment this enables: speak Tamil to Aura, she responds in Tamil. Switch to English mid-sentence, she follows instantly. Judges see it live.
+Build the complete Voca browser UI. By the end of this milestone, a user opens localhost:3000, selects a persona, clicks connect, speaks, and hears Voca respond — with live transcript, language badge, and persona switching all working visually.
 
 ---
 
-### Checkpoint 4.1 — Add `language_voice_map` to Persona JSON Files
+### Checkpoint 5.1 — Install Fonts and Global Styles
 
-Update all three persona JSON files to add a `language_voice_map` inside `voice_config`. This maps ISO language codes to the correct Murf voice ID for that language.
+File: `frontend/styles/globals.css` and `frontend/app/layout.tsx`
 
-Add this field to `voice_config` in all three persona files:
+Install the required fonts via next/font or Google Fonts import:
+- **Syne** — headings and display text
+- **DM Mono** — transcript text
+- **Satoshi** — UI body text (use Inter as fallback if Satoshi unavailable via Google Fonts)
 
-**aura.json** — add inside `voice_config`:
-```json
-"language_voice_map": {
-  "en": "en-IN-rohan",
-  "ta": "ta-IN-rohan",
-  "hi": "hi-IN-rohan"
+Set up CSS variables in `globals.css`:
+
+```css
+:root {
+  --bg: #080A0F;
+  --bg-surface: #0F1117;
+  --bg-elevated: #161B24;
+  --border: rgba(255,255,255,0.08);
+  --text-primary: #F0F2F5;
+  --text-secondary: #8B92A0;
+  --text-mono: #A8B5C8;
+
+  /* Persona accent — updated via JS */
+  --accent: #00C2B8;
+  --accent-glow: rgba(0, 194, 184, 0.15);
+  --orb-color: #00C2B8;
 }
 ```
 
-**nova.json** — add inside `voice_config`:
-```json
-"language_voice_map": {
-  "en": "en-IN-priya",
-  "ta": "ta-IN-rohan",
-  "hi": "hi-IN-rohan"
+Set body background to `var(--bg)`, default font to Satoshi/Inter.
+
+**Verification:** `npm run dev` — page loads at localhost:3000 with dark background. No console errors.
+
+---
+
+### Checkpoint 5.2 — WebSocket Client Library
+
+File: `frontend/lib/websocket.ts`
+
+Build a `VocaWebSocket` class:
+
+```typescript
+type MessageHandler = (message: VocaMessage) => void
+type AudioHandler = (chunk: ArrayBuffer) => void
+
+interface VocaMessage {
+  type: 'persona_loaded' | 'transcript' | 'language_changed' | 'response' | 'escalation' | 'error'
+  [key: string]: unknown
+}
+
+class VocaWebSocket {
+  connect(personaId: string, onMessage: MessageHandler, onAudio: AudioHandler): void
+  disconnect(): void
+  sendAudio(chunk: ArrayBuffer): void
+  sendEndOfSpeech(): void
+  switchPersona(personaId: string): void
+  get isConnected(): boolean
+  get latencyMs(): number   // tracks round-trip time
 }
 ```
 
-**apex.json** — add inside `voice_config`:
-```json
-"language_voice_map": {
-  "en": "en-IN-arjun",
-  "ta": "ta-IN-rohan",
-  "hi": "hi-IN-rohan"
+- Connects to `ws://localhost:8000/ws/browser/{personaId}`
+- Routes binary frames to `onAudio` handler
+- Routes JSON frames to `onMessage` handler
+- Tracks latency: timestamp when `end_of_speech` sent, timestamp when first `response` arrives
+- Reconnects automatically on unexpected disconnect (max 3 attempts)
+- Exports a singleton: `export const vocaWS = new VocaWebSocket()`
+
+**Verification:** Import in a test component, call connect, confirm no TypeScript errors. `npm run dev` must compile clean.
+
+---
+
+### Checkpoint 5.3 — useVoice Hook
+
+File: `frontend/hooks/useVoice.ts`
+
+Build a `useVoice` hook that handles mic capture and audio streaming:
+
+```typescript
+interface UseVoiceReturn {
+  isListening: boolean
+  startListening: () => Promise<void>
+  stopListening: () => void
+  audioLevel: number        // 0–1, for orb animation
+  error: string | null
+}
+
+export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void): UseVoiceReturn
+```
+
+- Uses `navigator.mediaDevices.getUserMedia({ audio: true })`
+- Uses `AudioContext` + `ScriptProcessorNode` or `AudioWorkletNode` to capture PCM chunks
+- Sends 4096-sample chunks to `onAudioChunk` as they arrive — do not buffer
+- Computes `audioLevel` as RMS of the current chunk — used to animate the orb
+- Calls `onAudioChunk` only while `isListening === true`
+- On `stopListening`: sends the final chunk if any, then triggers `end_of_speech`
+- Cleans up AudioContext on unmount
+
+**Verification:** `npm run dev` — hook compiles with no TypeScript errors.
+
+---
+
+### Checkpoint 5.4 — usePersona Hook
+
+File: `frontend/hooks/usePersona.ts`
+
+Build a `usePersona` hook:
+
+```typescript
+interface Persona {
+  id: string
+  name: string
+  display_name: string
+  ui_config: {
+    accent_color: string
+    orb_color: string
+    label: string
+  }
+}
+
+interface UsePersonaReturn {
+  personas: Persona[]
+  activePersona: Persona | null
+  setActivePersona: (persona: Persona) => void
+  isLoading: boolean
+}
+
+export function usePersona(): UsePersonaReturn
+```
+
+- Fetches `http://localhost:8000/personas` on mount
+- Defaults to first persona (apex) as active
+- When `setActivePersona` is called: updates CSS variables `--accent`, `--accent-glow`, `--orb-color` on `:root` to match new persona's ui_config colors
+- Accent glow is always the accent color at 15% opacity
+
+**Verification:** `npm run dev` — hook fetches personas and returns correct data. No TypeScript errors.
+
+---
+
+### Checkpoint 5.5 — VoiceOrb Component
+
+File: `frontend/components/VoiceOrb.tsx`
+
+The centrepiece of the UI. A large animated orb with 4 states:
+
+```typescript
+type OrbState = 'idle' | 'listening' | 'processing' | 'speaking'
+
+interface VoiceOrbProps {
+  state: OrbState
+  audioLevel: number   // 0–1, drives size pulse when listening
+  onClick: () => void
+  color: string        // matches --orb-color CSS var
 }
 ```
 
-Also update the `VoiceConfig` Pydantic model in `backend/models/persona.py` to include:
-```python
-language_voice_map: dict[str, str] = {}
+**Visual spec:**
+- Base size: 200px diameter circle
+- Background: radial gradient from `var(--orb-color)` at 30% opacity center to transparent edge
+- Border: 1px solid `var(--orb-color)` at 40% opacity
+- Inner glow: box-shadow `0 0 40px var(--accent-glow)`
+
+**State animations (use Framer Motion):**
+- `idle`: slow pulse — scale oscillates between 0.97 and 1.03 over 3s, ease in-out, infinite
+- `listening`: scale = `1 + (audioLevel * 0.3)` — orb breathes with the user's voice in real time
+- `processing`: rotate a subtle arc/spinner ring around the orb — indicates thinking
+- `speaking`: 3 concentric ripple rings expand outward and fade — new ring every 600ms
+
+**Click behavior:**
+- If idle → start listening (onClick)
+- If listening → stop listening (onClick)
+- Processing and speaking states are non-interactive
+
+**Center icon:**
+- Idle: microphone icon, `var(--text-secondary)` color
+- Listening: animated waveform bars or solid mic, `var(--orb-color)` color
+- Processing: small animated dots
+- Speaking: speaker/sound wave icon, `var(--orb-color)` color
+
+**Verification:** Render `<VoiceOrb state="idle" audioLevel={0} onClick={() => {}} color="#00C2B8" />` in page.tsx. Visually confirm orb renders with correct style. Switch state prop and confirm animation changes.
+
+---
+
+### Checkpoint 5.6 — PersonaSwitcher Component
+
+File: `frontend/components/PersonaSwitcher.tsx`
+
+```typescript
+interface PersonaSwitcherProps {
+  personas: Persona[]
+  activePersona: Persona | null
+  onSwitch: (persona: Persona) => void
+  disabled: boolean   // true when a conversation is in progress
+}
 ```
+
+**Visual spec:**
+- Horizontal pill row at the top of the page
+- Each pill: rounded-full, `var(--bg-elevated)` background, `var(--text-secondary)` text
+- Active pill: `var(--accent)` background, white text, subtle glow shadow
+- Transition: 300ms ease, smooth color crossfade
+- Disabled state: 50% opacity, cursor not-allowed
+- Shows persona label (Hospital / University / Startup) — not full display_name
+
+**Verification:** Renders all 3 persona pills. Clicking switches active pill with animation. `npm run dev` clean.
+
+---
+
+### Checkpoint 5.7 — Transcript Component
+
+File: `frontend/components/Transcript.tsx`
+
+```typescript
+interface TranscriptEntry {
+  role: 'user' | 'voca'
+  text: string
+  language: string
+  timestamp: number
+}
+
+interface TranscriptProps {
+  entries: TranscriptEntry[]
+}
+```
+
+**Visual spec:**
+- Monospaced font (`DM Mono`)
+- `var(--text-mono)` color
+- User entries: right-aligned, `var(--bg-elevated)` background pill
+- Voca entries: left-aligned, no background, slightly dimmer color
+- Each new entry animates in: fade + slide up, 200ms
+- Words stream in one by one with 20ms stagger (use Framer Motion's `staggerChildren`)
+- Max height: 40vh, scrolls automatically to latest entry
+- Empty state: subtle centered text "Start speaking to begin"
+
+**Verification:** Render with mock entries. Confirm layout and animation. `npm run dev` clean.
+
+---
+
+### Checkpoint 5.8 — LanguageBadge and StatusBar Components
+
+**File: `frontend/components/LanguageBadge.tsx`**
+
+```typescript
+interface LanguageBadgeProps {
+  language: string   // ISO code: 'en', 'ta', 'hi'
+  changed: boolean   // true for 2 seconds after a language switch
+}
+```
+
+- Small pill, top-right corner of the main UI
+- Shows full language name: `en` → "English", `ta` → "Tamil", `hi` → "Hindi"
+- `changed` state: brief highlight pulse animation for 2 seconds, then returns to normal
+- Background: `var(--bg-elevated)`, text: `var(--text-secondary)`
+- When `changed`: background briefly flashes to `var(--accent)` at 30% opacity
+
+**File: `frontend/components/StatusBar.tsx`**
+
+```typescript
+interface StatusBarProps {
+  connected: boolean
+  latencyMs: number
+  personaLabel: string
+}
+```
+
+- Fixed bottom bar, full width, height 32px
+- Background: `var(--bg-surface)`, border-top: `var(--border)`
+- Left: connection dot (green when connected, red when not) + "Connected" / "Disconnected"
+- Center: active persona label
+- Right: latency in ms — e.g. "342ms" — only shown when connected
+- Font: `DM Mono`, small size
+
+**Verification:** Both render correctly. `npm run dev` clean.
+
+---
+
+### Checkpoint 5.9 — Main Page Assembly
+
+File: `frontend/app/page.tsx`
+
+Wire all components together into the complete Voca interface:
+
+**Layout:**
+```
+┌─────────────────────────────────────┐
+│  [Aura] [Nova] [Apex]   [EN badge]  │  ← PersonaSwitcher + LanguageBadge
+│                                     │
+│           ◉  VoiceOrb               │  ← centered, large
+│                                     │
+│  User: Hello I want to book...      │  ← Transcript
+│  Voca: Of course! Let me help...    │
+│                                     │
+├─────────────────────────────────────┤
+│  ● Connected  |  Aura  |  342ms     │  ← StatusBar
+└─────────────────────────────────────┘
+```
+
+**Behaviour:**
+1. On mount: fetch personas, set Apex as default active persona, update CSS vars
+2. User clicks orb → `startListening()` → stream audio to WebSocket
+3. User clicks orb again → `stopListening()` → send `end_of_speech`
+4. On `transcript` message → add user entry to transcript
+5. On `response` message → add Voca entry to transcript
+6. On `language_changed` message → update LanguageBadge, trigger `changed` animation
+7. On binary audio frame → queue and play through Web Audio API
+8. On `escalation` message → show a subtle banner above the transcript
+9. On `persona_loaded` after switch → update CSS vars, animate orb color transition
+10. Orb state machine:
+    - idle → listening (on click)
+    - listening → processing (on end_of_speech sent)
+    - processing → speaking (on first audio chunk received)
+    - speaking → idle (on audio playback complete)
+
+**Audio playback:**
+- Collect binary WAV chunks into a buffer
+- When all chunks received (detect via response message arriving after binary frames): decode and play via `AudioContext.decodeAudioData()`
+- Do not play chunks individually — collect then play
 
 **Verification:**
-```bash
-python -c "
-from services.persona import PersonaService
-ps = PersonaService()
-vc = ps.get_voice_config('aura')
-print(vc)
-"
-```
-Must print the voice config dict including `language_voice_map` with 3 entries.
+- `npm run dev` — page loads, 3 persona pills visible, orb renders centered
+- Clicking orb changes its state visually
+- PersonaSwitcher switches active pill and orb color changes smoothly
+- No TypeScript errors, no console errors
 
 ---
 
-### Checkpoint 4.2 — Language State in Pipeline
+### Checkpoint 5.10 — Full Live Demo Verification
 
-File: `backend/services/pipeline.py`
+Test the complete end-to-end browser experience:
 
-Update `VocaPipeline` to track and use language state:
+1. Backend running: `uvicorn main:app --reload` in `D:\Projects\voca\backend`
+2. Frontend running: `npm run dev` in `D:\Projects\voca\frontend`
+3. Open `http://localhost:3000`
+4. Select Aura persona
+5. Click orb, speak: "Hello, I'd like to book an appointment"
+6. Confirm: transcript shows your speech, Voca responds with audio, transcript shows Voca's reply
+7. Switch to Apex persona mid-session
+8. Confirm: orb color changes to indigo, persona switcher updates
+9. Speak in Tamil (or type a Tamil phrase as a test)
+10. Confirm: language badge updates to Tamil
 
-- Add `self.current_language: str = "en"` at init — default to English
-- Add `self.language_history: list[str] = []` — track language per turn for analytics
-- After Gemini responds and returns `(response_text, detected_language)`:
-  - Update `self.current_language = detected_language`
-  - Append to `self.language_history`
-  - If language changed from previous turn, log: `Language switched: {prev} → {detected_language}`
-- When calling Murf TTS, resolve the correct voice ID using:
-  ```python
-  voice_map = self.voice_config.get("language_voice_map", {})
-  voice_id = voice_map.get(self.current_language, self.voice_config["murf_voice_id"])
-  ```
-  This falls back to the default voice if language not in map
-- Language switch must NOT reset conversation history — context is always preserved
-
-**Verification:**
-```bash
-python -c "
-import asyncio
-from services.pipeline import VocaPipeline
-
-async def test():
-    p = VocaPipeline('aura')
-    print(f'Default language: {p.current_language}')
-    print(f'Voice map: {p.voice_config.get(\"language_voice_map\")}')
-    # Simulate language detection
-    p.current_language = 'ta'
-    voice_map = p.voice_config.get('language_voice_map', {})
-    voice_id = voice_map.get(p.current_language, p.voice_config['murf_voice_id'])
-    print(f'Tamil voice resolved: {voice_id}')
-
-asyncio.run(test())
-"
-```
-Must print `Default language: en`, the voice map, and `Tamil voice resolved: ta-IN-rohan`.
-
----
-
-### Checkpoint 4.3 — Strengthen Gemini Language Instruction
-
-File: `backend/services/gemini.py`
-
-Update the `GeminiService.respond()` method to make language detection more robust:
-
-The prompt sent to Gemini must explicitly instruct:
-1. Detect the language of the user's message
-2. Respond entirely in that same language — not just the first sentence
-3. Start the response with `[LANG:xx]` where `xx` is the 2-letter ISO code
-4. If the user switches language mid-conversation, follow immediately
-
-Update the prompt assembly in `respond()` to append this instruction block after the system prompt, before the conversation history:
-
-```
-LANGUAGE RULE: Detect the language of the user's latest message.
-Respond entirely in that language.
-Always begin your response with [LANG:xx] where xx is the ISO 639-1 code.
-Examples: [LANG:en] for English, [LANG:ta] for Tamil, [LANG:hi] for Hindi.
-If the user switches language, you switch immediately in your next response.
-Never mix languages in a single response.
-```
-
-**Verification:**
-```bash
-python -c "
-import asyncio
-from services.gemini import GeminiService
-
-async def test():
-    gs = GeminiService()
-    # Test Tamil detection
-    text, lang = await gs.respond(
-        message='நான் ஒரு அப்பாயின்ட்மென்ட் எடுக்க விரும்புகிறேன்',
-        system_prompt='You are a helpful assistant.',
-        history=[]
-    )
-    print(f'Detected language: {lang}')
-    print(f'Response: {text[:100]}')
-
-asyncio.run(test())
-"
-```
-Must print `Detected language: ta` and a Tamil response text.
-
----
-
-### Checkpoint 4.4 — Language Change WebSocket Event
-
-File: `backend/api/routes/browser.py`
-
-After each pipeline turn, if the language changed from the previous turn, send a WebSocket event to the client:
-
-```json
-{"type": "language_changed", "from": "en", "to": "ta"}
-```
-
-This event must be sent AFTER the transcript message and BEFORE the audio chunks, so the frontend can update the language badge in real time.
-
-Update the transcript message to always include the detected language:
-```json
-{"type": "transcript", "text": "...", "language": "ta"}
-```
-
-The response message must also include detected language:
-```json
-{"type": "response", "text": "...", "language": "ta"}
-```
-
-**Verification:** Connect with a Python WebSocket test client, send a Tamil audio clip or simulate a Tamil transcript, and confirm `language_changed` event arrives with correct `from` and `to` values.
-
----
-
-### Checkpoint 4.5 — Graceful Fallback for Unsupported Languages
-
-File: `backend/services/pipeline.py`
-
-If Gemini detects a language not in the persona's `language_voice_map`:
-
-- Log a warning: `Language {lang} not in voice map for persona {persona_id}, falling back to default`
-- Use the persona's default `murf_voice_id` for TTS
-- Keep `self.current_language` updated to the detected language — do not revert
-- Voca still responds in the detected language via Gemini — only the TTS voice falls back
-
-**Verification:**
-```bash
-python -c "
-import asyncio
-from services.pipeline import VocaPipeline
-
-async def test():
-    p = VocaPipeline('apex')
-    # Simulate unsupported language
-    voice_map = p.voice_config.get('language_voice_map', {})
-    unsupported = 'fr'
-    voice_id = voice_map.get(unsupported, p.voice_config['murf_voice_id'])
-    print(f'Fallback voice for French: {voice_id}')
-    assert voice_id == p.voice_config['murf_voice_id'], 'Should fall back to default'
-    print('Fallback logic correct')
-
-asyncio.run(test())
-"
-```
-Must print the default voice ID and `Fallback logic correct`.
-
----
-
-### Checkpoint 4.6 — End-to-End Multilingual Verification
-
-This is the full integration test for Milestone 4. Run a complete simulation without real audio — use Gemini directly to simulate a multilingual conversation.
-
-Create `backend/test_multilingual.py`:
-
-```python
-"""
-Milestone 4 — Multilingual end-to-end test.
-Simulates a conversation that switches from English to Tamil and back.
-Tests: language detection, voice switching, history preservation.
-"""
-import asyncio
-from services.gemini import GeminiService
-from services.persona import PersonaService
-
-async def test():
-    ps = PersonaService()
-    gs = GeminiService()
-    system_prompt = ps.get_system_prompt('aura')
-    history = []
-
-    turns = [
-        "Hello, I'd like to book an appointment",
-        "நான் நாளை மதியம் வர விரும்புகிறேன்",  # Tamil: I want to come tomorrow afternoon
-        "What time is the OPD open?",             # Switch back to English
-    ]
-
-    current_language = "en"
-
-    for i, message in enumerate(turns):
-        text, lang = await gs.respond(
-            message=message,
-            system_prompt=system_prompt,
-            history=history
-        )
-        prev_lang = current_language
-        current_language = lang
-
-        print(f"\nTurn {i+1}:")
-        print(f"  User: {message}")
-        print(f"  Lang: {prev_lang} → {lang}")
-        print(f"  Voca: {text[:120]}")
-
-        history.append({"role": "user", "parts": [message]})
-        history.append({"role": "model", "parts": [text]})
-
-    print(f"\nFinal history length: {len(history)} entries")
-    print("✅ Multilingual test passed" if len(history) == 6 else "❌ History issue")
-
-asyncio.run(test())
-```
-
-Run it:
-```bash
-python test_multilingual.py
-```
-
-**Definition of done:**
-- Turn 1: `lang` = `en`, English response
-- Turn 2: `lang` = `ta`, Tamil response
-- Turn 3: `lang` = `en`, English response
-- History has 6 entries (3 user + 3 model)
-- No errors
+**Definition of done:** Full voice conversation works in the browser. Persona switch works live. Language badge updates. No errors in console.
 
 ---
 
 ## Constraints For This Session
 
-- Do NOT build the browser UI yet (Milestone 5)
 - Do NOT build Twilio telephony yet (Milestone 6)
 - Do NOT build session logging or WhatsApp yet (Milestone 7)
-- Focus entirely on: voice map → pipeline language state → Gemini language instruction → WebSocket events → fallback logic → end-to-end test
+- Do NOT build the dashboard page yet
+- Focus entirely on the main page voice interface
 
 ---
 
 ## Code Quality Standards
 
-- Every method has type hints
-- Language detection logic is in the pipeline — not scattered across services
-- No hardcoded language codes — always use the persona's `language_voice_map`
-- Log every language switch at INFO level
-- Use `logging` not `print` in service files
+- TypeScript strict mode — no `any`, no `@ts-ignore`
+- All components have proper prop interfaces
+- Framer Motion for all animations — no CSS transitions for state changes
+- Web Audio API for all audio — no `<audio>` element hacks
+- No inline styles — use Tailwind classes and CSS variables
+- Components are self-contained — no prop drilling more than 2 levels deep
 
 ---
 
@@ -342,4 +416,4 @@ python test_multilingual.py
 
 ## After This Milestone
 
-Once Milestone 4 is verified end-to-end, the next session targets **Milestone 5 — Browser Interface**.
+Once Milestone 5 is verified end-to-end, the next session targets **Milestone 6 — Telephony Layer**.
