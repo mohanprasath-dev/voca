@@ -9,9 +9,9 @@
 - [x] Milestone 2 — Voice Pipeline Core ✅
 - [x] Milestone 3 — Persona Engine ✅
 - [x] Milestone 4 — Multilingual Intelligence ✅
-- [x] Milestone 5 — Browser Interface ✅ (full UI working, persona switch, language badge, orb animations, WebSocket connected)
-- [ ] Milestone 6 — Telephony Layer ← CURRENT
-- [ ] Milestone 7 — Post-Call Intelligence
+- [x] Milestone 5 — Browser Interface ✅ (full UI working, persona switch, language badge, orb animations)
+- [x] Milestone 6 — Telephony Layer ✅ (code complete, TwiML webhook working, phone demo deferred — browser demo is primary)
+- [ ] Milestone 7 — Post-Call Intelligence ← CURRENT
 - [ ] Milestone 8 — Production Readiness
 - [ ] Milestone 9 — Demo Hardening
 - [ ] Milestone 10 — Presentation
@@ -21,11 +21,12 @@
 - Virtual environment: `D:\Projects\voca\.venv\`
 - Backend: `http://localhost:8000`, Frontend: `http://localhost:3000`
 - Gemini SDK: `google-genai`, model: `gemini-2.5-flash`
-- All packages installed in venv: fastapi, uvicorn, websockets, httpx, python-dotenv, pydantic-settings, deepgram-sdk, google-genai, twilio, aiohttp
+- All packages installed in venv: fastapi, uvicorn, websockets, httpx, python-dotenv, pydantic-settings, deepgram-sdk, google-genai, twilio, aiohttp, audioop-lts
 - Murf Falcon TTS — confirmed working
-- WebSocket at `/ws/browser/{persona_id}` — fully working with all message types
-- Multilingual: en/ta/hi verified, language_voice_map in all personas
-- Browser UI: fully working, persona switch, orb animations, transcript, language badge, status bar
+- WebSocket at `/ws/browser/{persona_id}` — fully working
+- Multilingual: en/ta/hi verified
+- Browser UI: fully working — persona switch, orb animations, transcript, language badge, status bar
+- Telephony: code complete, webhook verified, phone demo deferred
 
 ---
 
@@ -57,7 +58,7 @@ Voca is the voice layer for any phone number or web deployment on earth. Real-ti
 - Murf Falcon TTS (streaming)
 - Deepgram STT (streaming WebSocket, Nova-2)
 - Gemini `gemini-2.5-flash` via `google-genai`
-- Twilio Media Streams (WebSocket) for telephony
+- Twilio Media Streams for telephony
 - Twilio WhatsApp API for notifications
 
 ### Frontend
@@ -71,22 +72,21 @@ Voca is the voice layer for any phone number or web deployment on earth. Real-ti
 voca/
 ├── backend/
 │   ├── api/routes/
-│   │   ├── browser.py        ✅ WebSocket /ws/browser/{persona_id}
-│   │   ├── telephony.py      ← BUILD THIS (Milestone 6)
-│   │   └── dashboard.py      ✅ /personas endpoints
+│   │   ├── browser.py        ✅
+│   │   ├── telephony.py      ✅
+│   │   └── dashboard.py      ✅ /personas — needs session endpoints added
 │   ├── services/
 │   │   ├── murf.py           ✅
 │   │   ├── deepgram.py       ✅
-│   │   ├── gemini.py         ✅ google-genai, gemini-2.5-flash
-│   │   ├── pipeline.py       ✅ language state, voice switching
-│   │   ├── persona.py        ✅ singleton, 3 personas
-│   │   ├── session.py        ← BUILD THIS (Milestone 7)
-│   │   └── whatsapp.py       ← BUILD THIS (Milestone 7)
-│   ├── personas/
-│   │   ├── aura.json         ✅ with language_voice_map
-│   │   ├── nova.json         ✅
-│   │   └── apex.json         ✅
-│   ├── models/persona.py     ✅
+│   │   ├── gemini.py         ✅
+│   │   ├── pipeline.py       ✅
+│   │   ├── persona.py        ✅
+│   │   ├── session.py        ← BUILD THIS
+│   │   └── whatsapp.py       ← BUILD THIS (stub only)
+│   ├── personas/             ✅ aura, nova, apex
+│   ├── models/
+│   │   ├── persona.py        ✅
+│   │   └── session.py        ← BUILD THIS
 │   └── main.py               ✅
 └── frontend/                 ✅ complete
 ```
@@ -103,51 +103,34 @@ Backend → Frontend:
 {"type": "response", "text": "...", "language": "ta"}
 {"type": "escalation", "summary": "..."}
 {"type": "error", "message": "..."}
+{"type": "session_summary", "summary": {...}}   ← NEW in Milestone 7
 ```
-Binary frames = Murf TTS audio (WAV, 24000Hz)
-
-Frontend → Backend:
-```
-{"type": "end_of_speech"}
-{"type": "switch_persona", "persona_id": "nova"}
-```
-Binary frames = raw PCM audio from mic
 
 ---
 
-## Telephony Architecture (Milestone 6)
+## Session Data Model
 
-### How Twilio Media Streams works
-```
-Phone call → Twilio → POST /telephony/incoming
-  → FastAPI returns TwiML with <Stream> pointing to wss://your-domain/ws/telephony/{persona_id}
-  → Twilio opens WebSocket to /ws/telephony/{persona_id}
-  → Twilio streams mulaw 8kHz audio as base64-encoded JSON messages
-  → FastAPI decodes mulaw → PCM → Deepgram STT
-  → Gemini response → Murf TTS → re-encode to mulaw
-  → Stream mulaw audio back to Twilio via WebSocket
-  → Twilio plays audio to caller
-```
-
-### Twilio WebSocket message format (inbound from Twilio)
+Each conversation session must store:
 ```json
-{"event": "start", "start": {"streamSid": "...", "callSid": "...", "customParameters": {...}}}
-{"event": "media", "media": {"payload": "<base64 mulaw audio>"}}
-{"event": "stop"}
+{
+  "session_id": "uuid",
+  "persona_id": "aura",
+  "persona_name": "Aura",
+  "started_at": "ISO timestamp",
+  "ended_at": "ISO timestamp",
+  "duration_seconds": 120,
+  "transcript": [
+    {"role": "user", "text": "...", "language": "en", "timestamp": "ISO"},
+    {"role": "voca", "text": "...", "language": "en", "timestamp": "ISO"}
+  ],
+  "detected_languages": ["en", "ta"],
+  "escalated": false,
+  "escalation_reason": null,
+  "summary": "Caller asked about appointment booking. Resolved successfully.",
+  "resolution_status": "resolved",
+  "turn_count": 4
+}
 ```
-
-### Twilio WebSocket message format (outbound to Twilio)
-```json
-{"event": "media", "streamSid": "...", "media": {"payload": "<base64 mulaw audio>"}}
-{"event": "mark", "streamSid": "...", "mark": {"name": "response_complete"}}
-```
-
-### Audio format details
-- Twilio sends: mulaw (G.711 µ-law), 8000Hz, 8-bit, mono
-- Murf returns: WAV, 24000Hz, 16-bit, mono
-- Conversion needed: mulaw 8kHz ↔ PCM 16kHz (Deepgram needs 16kHz minimum)
-- Use `audioop` (Python stdlib) for mulaw↔PCM conversion
-- Use `audioop.ratecv` for sample rate conversion
 
 ---
 
@@ -184,6 +167,7 @@ GEMINI_API_KEY=
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
 TWILIO_PHONE_NUMBER=
+PUBLIC_URL=
 ```
 
 ---
@@ -192,19 +176,19 @@ TWILIO_PHONE_NUMBER=
 
 1. Never hardcode API keys
 2. All backend routes are async
-3. Streaming first — never buffer full response
+3. Streaming first
 4. Persona injected at session start
 5. Conversation history maintained per session
 6. Error states must be voiced
 7. TypeScript strict mode on frontend
 8. Use `google-genai` SDK only
 9. Language switch never resets history
-10. mulaw↔PCM conversion must happen in telephony layer — never send raw mulaw to Deepgram
+10. Sessions stored in-memory for prototype — dict keyed by session_id
 
 ---
 
 ## Hackathon Demo Sequence (3 minutes)
 
 1. Open browser → Aura persona → speak Tamil → Voca responds Tamil → switch to Apex → English conversation
-2. Call Twilio number on speaker → Murf voice answers live → books something → WhatsApp confirmation arrives
+2. After conversation ends → summary panel appears showing what was discussed
 3. Close with: "Twilio gave every app a phone number. Voca gives every phone number a brain."

@@ -9,6 +9,7 @@ import { PersonaSwitcher } from '../components/PersonaSwitcher';
 import { Transcript, TranscriptEntry } from '../components/Transcript';
 import LanguageBadge from '../components/LanguageBadge';
 import { StatusBar } from '../components/StatusBar';
+import SummaryPanel, { SessionSummaryData } from '../components/SummaryPanel';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function VocaPage() {
@@ -19,12 +20,15 @@ export default function VocaPage() {
   const [currentLanguage, setCurrentLanguage] = useState<string>('en');
   const [languageChanged, setLanguageChanged] = useState<boolean>(false);
   const [escalation, setEscalation] = useState<string | null>(null);
+  const [sessionSummary, setSessionSummary] = useState<SessionSummaryData | null>(null);
   
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [latencyMs, setLatencyMs] = useState<number>(0);
 
   const audioChunksRef = useRef<ArrayBuffer[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const previousOrbStateRef = useRef<OrbState>('idle');
+  const endSessionRequestedRef = useRef<boolean>(false);
 
   const handleAudioChunk = useCallback((chunk: ArrayBuffer) => {
     vocaWS.sendAudio(chunk);
@@ -98,6 +102,19 @@ export default function VocaPage() {
           }
         } else if (message.type === 'escalation') {
            setEscalation(message.message as string);
+        } else if (message.type === 'session_summary') {
+          setSessionSummary({
+            session_id: String(message.session_id || ''),
+            persona_name: String(message.persona_name || activePersona?.display_name || 'Voca'),
+            duration_seconds: Number(message.duration_seconds || 0),
+            turn_count: Number(message.turn_count || 0),
+            detected_languages: Array.isArray(message.detected_languages)
+              ? message.detected_languages.map((lang) => String(lang))
+              : [],
+            escalated: Boolean(message.escalated),
+            resolution_status: String(message.resolution_status || 'ended'),
+            summary: String(message.summary || 'No conversation recorded.'),
+          });
         }
       },
       (chunk: ArrayBuffer) => {
@@ -121,6 +138,20 @@ export default function VocaPage() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const previous = previousOrbStateRef.current;
+    if (
+      previous === 'speaking' &&
+      orbState === 'idle' &&
+      transcriptEntries.length > 0 &&
+      !endSessionRequestedRef.current
+    ) {
+      vocaWS.sendEndSession();
+      endSessionRequestedRef.current = true;
+    }
+    previousOrbStateRef.current = orbState;
+  }, [orbState, transcriptEntries.length]);
+
   const handleOrbClick = async () => {
     if (orbState === 'idle') {
       await startListening();
@@ -134,7 +165,17 @@ export default function VocaPage() {
   const handlePersonaSwitch = (persona: import('../hooks/usePersona').Persona) => {
     if (orbState !== 'idle') return;
     setActivePersona(persona);
+    setSessionSummary(null);
+    setTranscriptEntries([]);
+    endSessionRequestedRef.current = false;
     vocaWS.switchPersona(persona.id);
+  };
+
+  const handleSummaryDismiss = () => {
+    setSessionSummary(null);
+    setTranscriptEntries([]);
+    setEscalation(null);
+    endSessionRequestedRef.current = false;
   };
 
   if (isLoading) {
@@ -150,6 +191,7 @@ export default function VocaPage() {
   return (
     <motion.main 
       className="min-h-screen flex flex-col font-sans overflow-hidden"
+      style={{ ['--accent' as string]: currentAccent }}
       animate={{ backgroundColor: '#080A0F' }}
       transition={{ duration: 0.4 }}
     >
@@ -200,6 +242,9 @@ export default function VocaPage() {
 
         <div className="w-full max-w-3xl flex-1 flex flex-col justify-end">
           <Transcript entries={transcriptEntries} accentColor={currentAccent} />
+          <div className="mt-4">
+            <SummaryPanel data={sessionSummary} onDismiss={handleSummaryDismiss} />
+          </div>
         </div>
       </div>
 

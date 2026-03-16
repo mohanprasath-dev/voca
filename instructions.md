@@ -1,7 +1,7 @@
 # Voca — AI Agent Working Instructions
 
-> Read `prompt.md` fully before starting. Pay special attention to the Telephony Architecture section.
-> Milestones 1–5 are complete. Do not touch anything from those milestones.
+> Read `prompt.md` fully before starting.
+> Milestones 1–6 are complete. Do not touch anything from those milestones.
 
 ---
 
@@ -9,6 +9,7 @@
 
 - Python 3.14, venv: `D:\Projects\voca\.venv\`
 - Backend: `D:\Projects\voca\backend\`
+- Frontend: `D:\Projects\voca\frontend\`
 - Activate: `d:\Projects\voca\.venv\Scripts\Activate.ps1`
 - Gemini SDK: `google-genai`, model: `gemini-2.5-flash`
 
@@ -16,298 +17,321 @@
 
 ## Current Session Target
 
-### MILESTONE 6 — TELEPHONY LAYER
+### MILESTONE 7 — POST-CALL INTELLIGENCE
 
-By the end of this milestone, calling the Twilio phone number must connect to Voca's brain, speak naturally, and hear Murf Falcon's voice respond — over a real phone call.
-
----
-
-### Checkpoint 6.1 — Install Audio Conversion Dependencies
-
-Twilio streams mulaw 8kHz audio. Deepgram needs PCM 16kHz. Murf returns WAV 24kHz. Conversion is required at every step.
-
-Install required packages:
-
-```bash
-pip install audioop-lts
-```
-
-Note: `audioop` was removed from Python 3.13+ stdlib. `audioop-lts` is the drop-in replacement. Import it as `import audioop`.
-
-Also install ngrok for local tunneling (needed for Twilio webhooks to reach localhost):
-
-```bash
-npm install -g ngrok
-```
-
-**Verification:**
-```bash
-python -c "import audioop; print('audioop OK')"
-```
-Must print `audioop OK`.
+By the end of this milestone, every conversation is automatically logged, an AI summary is generated, and the summary is displayed to the user in the browser as a clean panel after the conversation ends. This is what transforms Voca from a voice chatbot into a voice product.
 
 ---
 
-### Checkpoint 6.2 — Audio Conversion Utility
+### Checkpoint 7.1 — Session Pydantic Models
 
-File: `backend/services/audio_utils.py`
+File: `backend/models/session.py`
 
-Build audio conversion functions used by the telephony pipeline:
+Replace whatever is there with these exact models:
 
 ```python
-def mulaw_to_pcm16(mulaw_bytes: bytes) -> bytes:
-    """Convert mulaw 8kHz bytes to PCM16 8kHz bytes."""
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+import uuid
 
-def pcm16_8k_to_16k(pcm_bytes: bytes) -> bytes:
-    """Upsample PCM16 from 8kHz to 16kHz for Deepgram."""
+class TranscriptTurn(BaseModel):
+    role: str                    # "user" or "voca"
+    text: str
+    language: str
+    timestamp: datetime
 
-def wav_24k_to_mulaw_8k(wav_bytes: bytes) -> bytes:
-    """Convert WAV 24kHz (from Murf) to mulaw 8kHz for Twilio.
-    Steps: strip WAV header → resample 24k→8k → PCM→mulaw encode"""
+class SessionSummary(BaseModel):
+    session_id: str
+    persona_id: str
+    persona_name: str
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
+    transcript: list[TranscriptTurn] = []
+    detected_languages: list[str] = []
+    escalated: bool = False
+    escalation_reason: Optional[str] = None
+    summary: Optional[str] = None
+    resolution_status: str = "in_progress"   # "resolved", "escalated", "abandoned"
+    turn_count: int = 0
 ```
-
-All functions use `audioop` for conversion. No external libraries.
 
 **Verification:**
 ```bash
 python -c "
-from services.audio_utils import mulaw_to_pcm16, pcm16_8k_to_16k, wav_24k_to_mulaw_8k
-# Test with synthetic silence (zero bytes)
-mulaw_silence = bytes([0xFF] * 160)  # 20ms of mulaw silence
-pcm = mulaw_to_pcm16(mulaw_silence)
-pcm16k = pcm16_8k_to_16k(pcm)
-print(f'mulaw→pcm: {len(mulaw_silence)} → {len(pcm)} bytes')
-print(f'8k→16k: {len(pcm)} → {len(pcm16k)} bytes')
-print('Audio utils OK')
+from models.session import SessionSummary, TranscriptTurn
+from datetime import datetime
+s = SessionSummary(session_id='test', persona_id='apex', persona_name='Apex', started_at=datetime.now())
+print(s.model_dump())
+print('Session models OK')
 "
 ```
-Must print byte counts and `Audio utils OK`.
 
 ---
 
-### Checkpoint 6.3 — Twilio Incoming Call Webhook
+### Checkpoint 7.2 — SessionService
 
-File: `backend/api/routes/telephony.py`
+File: `backend/services/session.py`
 
-Build the TwiML webhook endpoint that Twilio hits when a call comes in:
+Build a `SessionService` class:
 
-**`POST /telephony/incoming`**
+```python
+class SessionService:
+    def __init__(self):
+        self._sessions: dict[str, SessionSummary] = {}   # in-memory store
 
-- Accepts Twilio's form-encoded POST request
-- Reads `To` parameter to determine which Twilio number was called
-- Maps number to persona (or defaults to `apex` if no mapping found)
-- Returns TwiML XML response that:
-  - Greets the caller with a brief `<Say>` message using a natural voice
-  - Opens a `<Connect><Stream>` pointing to `wss://{host}/ws/telephony/{persona_id}`
-  - Sets `track="inbound_track"` on the Stream
+    def create_session(self, persona_id: str, persona_name: str) -> str:
+        """Create a new session, return session_id."""
 
-TwiML response format:
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Connect>
-    <Stream url="wss://{host}/ws/telephony/{persona_id}">
-      <Parameter name="persona_id" value="{persona_id}"/>
-    </Stream>
-  </Connect>
-</Response>
+    def add_turn(self, session_id: str, role: str, text: str, language: str) -> None:
+        """Append a transcript turn to the session."""
+
+    def mark_escalated(self, session_id: str, reason: str) -> None:
+        """Mark session as escalated with reason."""
+
+    def end_session(self, session_id: str) -> SessionSummary:
+        """
+        Close the session:
+        - Set ended_at to now
+        - Calculate duration_seconds
+        - Collect detected_languages (unique, ordered by first appearance)
+        - Set turn_count
+        - Set resolution_status: 'escalated' if escalated, 'resolved' if turn_count > 0, else 'abandoned'
+        - Generate AI summary via Gemini (see below)
+        - Return the completed SessionSummary
+        """
+
+    def get_session(self, session_id: str) -> SessionSummary | None:
+        """Return session by ID or None."""
+
+    def list_sessions(self, limit: int = 20) -> list[SessionSummary]:
+        """Return most recent sessions, newest first."""
 ```
 
-- `host` must be read from a `PUBLIC_URL` environment variable (set to ngrok URL during demo)
-- Add `PUBLIC_URL` to `config.py` and `.env`
-- Response Content-Type must be `application/xml`
+**AI Summary generation in `end_session`:**
+Use `google-genai` to generate a 2-3 sentence summary of the conversation:
 
-**`GET /telephony/status`** — health check returning `{"telephony": "ready", "number": "<TWILIO_PHONE_NUMBER>"}`
+```python
+from google import genai
+from config import settings
+
+client = genai.Client(api_key=settings.gemini_api_key)
+
+transcript_text = "\n".join(
+    f"{turn.role.upper()}: {turn.text}"
+    for turn in session.transcript
+)
+
+prompt = f"""Summarize this voice conversation in 2-3 sentences.
+Focus on: what the caller needed, whether it was resolved, and any notable details.
+Be concise and factual. Do not use bullet points.
+
+TRANSCRIPT:
+{transcript_text}
+
+SUMMARY:"""
+
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=prompt
+)
+session.summary = response.text.strip()
+```
+
+If the transcript is empty, set summary to `"No conversation recorded."`
 
 **Verification:**
-```bash
-curl -X POST http://localhost:8000/telephony/incoming \
-  -d "To=%2B15551234567&From=%2B919876543210&CallSid=CA123"
-```
-Must return valid TwiML XML with a `<Stream url="wss://...">` element.
-
----
-
-### Checkpoint 6.4 — Telephony WebSocket Handler
-
-File: `backend/api/routes/telephony.py`
-
-Build the WebSocket endpoint at `/ws/telephony/{persona_id}` that handles the Twilio Media Stream:
-
-**Connection lifecycle:**
-1. On WebSocket connect: create `VocaPipeline` for the persona
-2. Wait for Twilio `start` event — extract `streamSid`, log call start
-3. Send Voca's greeting audio immediately:
-   - Generate greeting via Gemini: "Hello, you've reached [org name]. How can I help you today?"
-   - Convert to Murf TTS → WAV → mulaw 8kHz
-   - Send to Twilio as base64 media event
-4. Accumulate incoming `media` events — decode base64 → mulaw bytes
-5. Use VAD (Voice Activity Detection) to detect end of speech:
-   - Simple energy-based VAD: if 600ms of silence detected after speech, treat as end of utterance
-   - Silence threshold: RMS of mulaw chunk below 200
-6. On end of utterance:
-   - Convert accumulated mulaw → PCM16 8kHz → PCM16 16kHz
-   - Send to Deepgram STT → get transcript
-   - Send transcript to Gemini via pipeline → get response text
-   - Convert response to Murf TTS → WAV → mulaw 8kHz
-   - Stream mulaw back to Twilio as base64 media events
-   - Send `mark` event when done
-7. On Twilio `stop` event: log call end, close pipeline
-
-**Escalation handling:**
-- If `pipeline.escalation_needed` is True after a turn:
-  - Speak the persona's `escalation_message` via Murf
-  - Send a WhatsApp notification to the business owner (Milestone 7 stub — just log for now)
-  - End the call gracefully
-
-**Error handling:**
-- If Deepgram or Gemini fails mid-call: speak a fallback message via Murf ("I'm having trouble understanding, please hold")
-- Never go silent — Voca must always say something
-
-**Verification:** Cannot fully verify without ngrok + Twilio. Instead, create a unit test:
 ```bash
 python -c "
 import asyncio
-from services.audio_utils import mulaw_to_pcm16, pcm16_8k_to_16k
+from services.session import SessionService
+from datetime import datetime
+
+svc = SessionService()
+sid = svc.create_session('apex', 'Apex')
+svc.add_turn(sid, 'user', 'Hi I want to reset my password', 'en')
+svc.add_turn(sid, 'voca', 'Sure, go to login page and click Forgot Password', 'en')
+svc.add_turn(sid, 'user', 'Thanks that worked', 'en')
+summary = svc.end_session(sid)
+print(f'Session ID: {summary.session_id}')
+print(f'Turn count: {summary.turn_count}')
+print(f'Status: {summary.resolution_status}')
+print(f'Summary: {summary.summary}')
+print('SessionService OK')
+"
+```
+Must print a coherent 2-3 sentence summary and `SessionService OK`.
+
+---
+
+### Checkpoint 7.3 — Wire SessionService into Pipeline
+
+File: `backend/services/pipeline.py`
+
+Update `VocaPipeline` to use `SessionService`:
+
+- Import and instantiate `SessionService` at the top of the module as a singleton: `session_service = SessionService()`
+- In `VocaPipeline.__init__`: call `session_service.create_session(persona_id, persona.name)` — store `self.session_id`
+- In `process_audio` after transcription: call `session_service.add_turn(self.session_id, 'user', transcript, language)`
+- In `process_audio` after Gemini responds: call `session_service.add_turn(self.session_id, 'voca', response_text, language)`
+- If escalation triggered: call `session_service.mark_escalated(self.session_id, escalation_summary)`
+- Add method: `async def close_session(self) -> SessionSummary` — calls `session_service.end_session(self.session_id)` and returns the summary
+
+**Verification:**
+```bash
+python -c "
+import asyncio
 from services.pipeline import VocaPipeline
 
 async def test():
     p = VocaPipeline('apex')
-    print(f'Pipeline ready for telephony: {p.persona.name}')
-    # Simulate audio processing
-    mulaw_silence = bytes([0xFF] * 1600)  # 200ms silence
-    pcm = mulaw_to_pcm16(mulaw_silence)
-    pcm16k = pcm16_8k_to_16k(pcm)
-    print(f'Audio conversion pipeline: {len(mulaw_silence)} → {len(pcm16k)} bytes')
-    print('Telephony pipeline ready')
+    print(f'Session ID created: {p.session_id}')
+    print('Pipeline session wiring OK')
 
 asyncio.run(test())
 "
 ```
+Must print a session ID (UUID format) and `Pipeline session wiring OK`.
 
 ---
 
-### Checkpoint 6.5 — Number-to-Persona Routing
+### Checkpoint 7.4 — Session End WebSocket Event
 
-File: `backend/api/routes/telephony.py`
+File: `backend/api/routes/browser.py`
 
-Add a `PERSONA_PHONE_MAP` at the top of the telephony router:
+Update the WebSocket handler to send a session summary when the conversation ends:
 
-```python
-# Maps Twilio phone numbers to persona IDs
-# Add your Twilio numbers here
-PERSONA_PHONE_MAP: dict[str, str] = {
-    # "+15551234567": "aura",  # Hospital line
-    # "+15557654321": "nova",  # University line
-}
-DEFAULT_PERSONA = "apex"
-
-def get_persona_for_number(phone_number: str) -> str:
-    return PERSONA_PHONE_MAP.get(phone_number, DEFAULT_PERSONA)
-```
-
-Also add a `POST /telephony/configure` endpoint that allows updating the map at runtime:
+- Add a way for the client to signal end of session: JSON message `{"type": "end_session"}`
+- When received: call `await pipeline.close_session()` → get `SessionSummary`
+- Send to client:
 ```json
-{"phone_number": "+15551234567", "persona_id": "aura"}
+{
+  "type": "session_summary",
+  "session_id": "...",
+  "persona_name": "Apex",
+  "duration_seconds": 45.2,
+  "turn_count": 4,
+  "detected_languages": ["en"],
+  "escalated": false,
+  "resolution_status": "resolved",
+  "summary": "Caller asked about password reset. Issue resolved successfully in one step."
+}
 ```
+- Also send summary automatically if WebSocket disconnects cleanly (client closed tab)
 
-This means on demo day, you can assign specific numbers to specific personas without restarting the backend.
-
-**Verification:**
-```bash
-curl -X POST http://localhost:8000/telephony/configure \
-  -H "Content-Type: application/json" \
-  -d '{"phone_number": "+15551234567", "persona_id": "aura"}'
-```
-Must return `{"success": true, "phone_number": "+15551234567", "persona_id": "aura"}`.
+**Verification:** Cannot fully verify without live audio — confirm the route compiles clean and the `end_session` handler is present in the file.
 
 ---
 
-### Checkpoint 6.6 — Register Routes in main.py
+### Checkpoint 7.5 — Dashboard API Endpoints
 
-File: `backend/main.py`
+File: `backend/api/routes/dashboard.py`
 
-Ensure the telephony router is registered:
+Add session endpoints alongside the existing `/personas` endpoints:
 
-```python
-from api.routes.telephony import router as telephony_router
-app.include_router(telephony_router, prefix="/telephony")
-app.include_router(telephony_router)  # for /ws/telephony WebSocket (no prefix)
+**`GET /sessions`** — returns list of recent sessions (newest first, limit 20)
+- Response: array of SessionSummary objects (full data)
+
+**`GET /sessions/{session_id}`** — returns single session by ID
+
+**`GET /sessions/stats`** — returns aggregate stats:
+```json
+{
+  "total_sessions": 12,
+  "resolved": 10,
+  "escalated": 1,
+  "abandoned": 1,
+  "languages_used": ["en", "ta"],
+  "avg_duration_seconds": 38.5,
+  "avg_turns": 3.2
+}
 ```
 
-Add `PUBLIC_URL` to `backend/config.py`:
-```python
-public_url: str = "http://localhost:8000"
-```
-
-Add to `.env`:
-```
-PUBLIC_URL=http://localhost:8000
-```
+All endpoints use the singleton `SessionService` via FastAPI dependency.
 
 **Verification:**
 ```bash
 uvicorn main:app --reload
-curl http://localhost:8000/telephony/status
+curl http://localhost:8000/sessions
+curl http://localhost:8000/sessions/stats
 ```
-Must return `{"telephony": "ready"}`.
+Both must return valid JSON with no errors. Sessions list may be empty on fresh start — that's fine.
 
 ---
 
-### Checkpoint 6.7 — ngrok Tunnel Setup
+### Checkpoint 7.6 — SummaryPanel Frontend Component
 
-This is the bridge between Twilio (cloud) and your local FastAPI server.
+File: `frontend/components/SummaryPanel.tsx`
 
-Start ngrok:
-```bash
-ngrok http 8000
+Build the post-conversation summary panel:
+
+```typescript
+interface SessionSummaryData {
+  session_id: string
+  persona_name: string
+  duration_seconds: number
+  turn_count: number
+  detected_languages: string[]
+  escalated: boolean
+  resolution_status: string
+  summary: string
+}
+
+interface SummaryPanelProps {
+  data: SessionSummaryData | null
+  onDismiss: () => void
+}
 ```
 
-Copy the `https://xxxx.ngrok.io` URL. Update `.env`:
-```
-PUBLIC_URL=https://xxxx.ngrok.io
-```
+**Visual spec:**
+- Appears as a slide-up panel from the bottom of the transcript area
+- Dark glassmorphism card, border with persona accent color
+- Header: persona name + resolution status badge (green "Resolved" / red "Escalated" / gray "Ended")
+- Body: the AI-generated summary text in a readable font
+- Stats row: duration (e.g. "0:45"), turns (e.g. "4 turns"), languages (e.g. "EN · TA")
+- Dismiss button: subtle "×" top right — clears the panel and resets for new conversation
+- Entrance animation: slide up + fade in via Framer Motion
+- Exit animation: slide down + fade out
 
-In the Twilio Console:
-1. Go to Phone Numbers → Manage → Active Numbers
-2. Click your number
-3. Under Voice & Fax → A Call Comes In → Webhook:
-   - Set to: `https://xxxx.ngrok.io/telephony/incoming`
-   - Method: HTTP POST
-4. Save
-
-**Verification:** Call the Twilio number from your phone. The call should connect. Even if audio isn't working yet, the call connecting confirms the webhook is wired correctly.
+**Verification:** Render with mock data in `page.tsx`. Confirm it appears and dismisses correctly.
 
 ---
 
-### Checkpoint 6.8 — End-to-End Phone Call Test
+### Checkpoint 7.7 — Wire SummaryPanel into Main Page
 
-With backend running, ngrok tunneling, and Twilio configured:
+File: `frontend/app/page.tsx`
 
-1. Call the Twilio number
-2. Confirm Voca answers with a greeting (Murf voice)
-3. Speak a sentence — confirm Voca responds intelligently
-4. Speak in Tamil — confirm Voca responds in Tamil
-5. Say something that triggers escalation — confirm escalation message is spoken
+- Add state: `const [sessionSummary, setSessionSummary] = useState<SessionSummaryData | null>(null)`
+- In the WebSocket message handler, when `message.type === 'session_summary'`: set `sessionSummary` state
+- When orb returns to idle after speaking AND turn count > 0: send `{"type": "end_session"}` to backend
+- Render `<SummaryPanel data={sessionSummary} onDismiss={() => setSessionSummary(null)} />` below the transcript
+- On dismiss: clear summary, reset transcript entries, ready for new conversation
 
-**Definition of done:** Full natural voice conversation works over a real phone call. Murf Falcon's voice answers. The conversation feels real.
+**Verification:**
+- Start backend + frontend
+- Have a short conversation (2-3 turns)
+- After Voca finishes speaking, orb returns to idle
+- Click orb again to end session — summary panel should slide up with the AI summary
+- Clicking dismiss clears everything and resets for a new conversation
 
 ---
 
 ## Constraints
 
-- Do NOT build WhatsApp notifications yet (Milestone 7)
-- Do NOT build session logging yet (Milestone 7)
-- Focus entirely on: audio conversion → TwiML webhook → Media Streams WebSocket → full phone call working
+- WhatsApp notifications are a stub only — log to console, do not actually send
+- Session data is in-memory — resets on backend restart (acceptable for hackathon)
+- Do NOT build export functionality yet
+- Focus: session logging → AI summary → summary panel in UI
 
 ---
 
 ## Code Quality
 
-- `audioop` for all audio conversion — no ffmpeg, no subprocess
-- All WebSocket handling is async
-- mulaw↔PCM conversion is in `audio_utils.py` — not inline in the route
-- Twilio credentials loaded from config, never hardcoded
+- SessionService is a singleton — one instance shared across all connections
+- All Gemini calls in SessionService are synchronous (summary generation happens after call ends, not during)
+- No session data ever sent to the frontend during an active conversation — only after `end_session`
+- TypeScript strict mode, no `any` types in frontend components
 
 ---
 
@@ -322,4 +346,4 @@ With backend running, ngrok tunneling, and Twilio configured:
 
 ## After This Milestone
 
-Once a real phone call works end-to-end, the next session targets **Milestone 7 — Post-Call Intelligence**.
+Once Milestone 7 is verified, the next session targets **Milestone 9 — Demo Hardening** (skipping Milestone 8 Production Readiness for the hackathon — demo quality takes priority).

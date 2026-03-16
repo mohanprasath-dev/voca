@@ -1,12 +1,15 @@
 import logging
 
 from models.persona import PersonaConfig
+from models.session import SessionSummary
 from services.gemini import GeminiService
 from services.murf import MurfService
 from services.persona import PersonaService
+from services.session import SessionService
 
 
 logger = logging.getLogger("voca.pipeline")
+session_service = SessionService()
 
 
 class VocaPipeline:
@@ -27,6 +30,8 @@ class VocaPipeline:
         self.language_history: list[str] = []
         self.escalation_needed: bool = False
         self.escalation_summary: str = ""
+        self.session_id: str = session_service.create_session(persona_id, self.persona.name)
+        logger.info("Created session %s for persona %s", self.session_id, persona_id)
 
     async def respond(self, user_message: str) -> dict:
         response_text, language_code = await self.gemini_service.respond(
@@ -34,6 +39,8 @@ class VocaPipeline:
             system_prompt=self.system_prompt,
             history=self.history,
         )
+
+        session_service.add_turn(self.session_id, "user", user_message, language_code)
 
         previous_language = self.current_language
         self.current_language = language_code
@@ -45,6 +52,9 @@ class VocaPipeline:
         self.history.append({"role": "assistant", "content": response_text})
 
         self._detect_escalation(response_text)
+        session_service.add_turn(self.session_id, "voca", response_text, language_code)
+        if self.escalation_needed:
+            session_service.mark_escalated(self.session_id, self.escalation_summary)
 
         return {
             "text": response_text,
@@ -53,6 +63,9 @@ class VocaPipeline:
             "escalation_summary": self.escalation_summary,
             "voice_config": self.voice_config,
         }
+
+    async def close_session(self) -> SessionSummary:
+        return session_service.end_session(self.session_id)
 
     async def generate_audio(self, text: str):
         voice_map = self.voice_config.get("language_voice_map", {})

@@ -2,7 +2,7 @@ export type MessageHandler = (message: VocaMessage) => void;
 export type AudioHandler = (chunk: ArrayBuffer) => void;
 
 export interface VocaMessage {
-  type: 'persona_loaded' | 'transcript' | 'language_changed' | 'response' | 'escalation' | 'error';
+  type: 'persona_loaded' | 'transcript' | 'language_changed' | 'response' | 'escalation' | 'error' | 'session_summary';
   [key: string]: unknown;
 }
 
@@ -108,6 +108,12 @@ class VocaWebSocket {
       if (this.onMessage && this.onAudio) {
         this.connect(personaId, this.onMessage, this.onAudio);
       }
+    }
+  }
+
+  sendEndSession(): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'end_session' }));
     }
   }
 

@@ -4,6 +4,7 @@ from api.routes import browser, dashboard
 from api.routes.telephony import router as telephony_router
 from api.middleware.cors import setup_cors
 from services.persona import PersonaService
+from services.pipeline import session_service
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +16,7 @@ app = FastAPI(title="Voca API", version="1.0.0")
 # Initialize singleton services
 persona_service = PersonaService()
 app.state.persona_service = persona_service
+app.state.session_service = session_service
 
 # Setup CORS
 setup_cors(app)

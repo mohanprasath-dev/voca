@@ -12,6 +12,20 @@ router = APIRouter()
 logger = logging.getLogger("voca.browser")
 
 
+def _build_session_summary_message(summary) -> dict:
+	return {
+		"type": "session_summary",
+		"session_id": summary.session_id,
+		"persona_name": summary.persona_name,
+		"duration_seconds": summary.duration_seconds,
+		"turn_count": summary.turn_count,
+		"detected_languages": summary.detected_languages,
+		"escalated": summary.escalated,
+		"resolution_status": summary.resolution_status,
+		"summary": summary.summary,
+	}
+
+
 @router.websocket("/{persona_id}")
 async def browser_websocket(
 	websocket: WebSocket,
@@ -40,6 +54,11 @@ async def browser_websocket(
 		while True:
 			payload = await websocket.receive_json()
 			message_type = payload.get("type")
+
+			if message_type == "end_session":
+				summary = await pipeline.close_session()
+				await websocket.send_json(_build_session_summary_message(summary))
+				continue
 
 			if message_type == "switch_persona":
 				requested_persona_id = str(payload.get("persona_id", "")).strip()
@@ -116,5 +135,10 @@ async def browser_websocket(
 				continue
 
 			await websocket.send_json({"type": "error", "message": f"Unsupported message type: {message_type}"})
-	except WebSocketDisconnect:
-		logger.info("Browser websocket disconnected for persona %s", pipeline.persona.id)
+	except WebSocketDisconnect as exc:
+		logger.info("Browser websocket disconnected for persona %s (code=%s)", pipeline.persona.id, exc.code)
+		if exc.code == 1000:
+			try:
+				await pipeline.close_session()
+			except Exception:
+				logger.exception("Failed to close session on clean disconnect")
