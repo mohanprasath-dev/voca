@@ -1,20 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
-from datetime import UTC, datetime
-from typing import Any
-
-import aiohttp
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from models.persona import Persona
-from models.session import Message
 from services.deepgram import DeepgramService
-from services.gemini import GeminiService
-from services.murf import MurfService
 from services.persona import get_persona_service
 from services.pipeline import PipelineService
 from services.session import get_session_service
@@ -63,92 +55,74 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
     session = session_svc.create_session(persona.id)
     current_language: str | None = None
 
-    # Deepgram streaming connection
-    dg_ws: aiohttp.ClientWebSocketResponse | None = None
-    aio_session: aiohttp.ClientSession | None = None
     audio_buffer: list[bytes] = []
-    final_transcript_parts: list[str] = []
 
-    async def open_deepgram() -> None:
-        nonlocal dg_ws, aio_session
-        if dg_ws is not None:
-            return
-        url = deepgram_svc.build_ws_url(language=current_language)
-        headers = deepgram_svc.build_headers()
-        aio_session = aiohttp.ClientSession()
-        dg_ws = await aio_session.ws_connect(url, headers=headers)
-        logger.info("Deepgram stream opened for session %s", session.session_id)
-
-    async def close_deepgram() -> None:
-        nonlocal dg_ws, aio_session
-        if dg_ws:
-            try:
-                await dg_ws.close()
-            except Exception:
-                pass
-            dg_ws = None
-        if aio_session:
-            try:
-                await aio_session.close()
-            except Exception:
-                pass
-            aio_session = None
-
-    async def read_deepgram_results() -> None:
-        nonlocal current_language
-        if dg_ws is None:
-            return
+    async def safe_send_json(payload: dict[str, object]) -> bool:
         try:
-            async for msg in dg_ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    result = deepgram_svc.parse_transcript_event(msg.data)
-                    if result is None:
-                        continue
+            await websocket.send_json(payload)
+            return True
+        except Exception:
+            return False
 
-                    transcript = result["transcript"]
-                    is_final = result["is_final"]
-                    detected_lang = result.get("language") or "en"
-
-                    # Detect language change
-                    if detected_lang and detected_lang != current_language and current_language is not None:
-                        await websocket.send_json({
-                            "type": "language_changed",
-                            "from": current_language,
-                            "to": detected_lang,
-                        })
-                    current_language = detected_lang
-
-                    # Send interim/final transcript to frontend
-                    await websocket.send_json({
-                        "type": "transcript",
-                        "text": transcript,
-                        "language": detected_lang,
-                    })
-
-                    if is_final:
-                        final_transcript_parts.append(transcript)
-                elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
-                    break
-        except Exception as exc:
-            logger.error("Deepgram read error: %s", exc)
+    async def safe_send_bytes(chunk: bytes) -> bool:
+        try:
+            await websocket.send_bytes(chunk)
+            return True
+        except Exception:
+            return False
 
     async def process_full_utterance() -> None:
-        nonlocal final_transcript_parts
-        if not final_transcript_parts:
+        nonlocal current_language, audio_buffer
+        if not audio_buffer:
             return
 
-        full_text = " ".join(final_transcript_parts)
-        final_transcript_parts = []
-
-        if not full_text.strip():
+        # Send a tiny priming PCM chunk immediately so playback can start while
+        # STT/LLM/TTS processing continues.
+        if not await safe_send_bytes(b"\x00" * 4096):
             return
+
+        audio_bytes = b"".join(audio_buffer)
+        audio_buffer = []
+
+        try:
+            transcript_text, detected_language = await deepgram_svc.transcribe_bytes(audio_bytes)
+        except Exception as exc:
+            logger.error("Deepgram transcription error: %s", exc)
+            await websocket.send_json({"type": "error", "message": "Speech recognition failed. Please try again."})
+            return
+
+        transcript_text = str(transcript_text).strip()
+        detected_language = str(detected_language or current_language or "en")
+
+        if current_language and detected_language != current_language:
+            if not await safe_send_json({
+                "type": "language_changed",
+                "from": current_language,
+                "to": detected_language,
+            }):
+                return
+        current_language = detected_language
+
+        if not transcript_text:
+            transcript_text = "I could not hear clear speech."
+
+        if not await safe_send_json({
+            "type": "transcript",
+            "text": transcript_text,
+            "language": detected_language,
+        }):
+            return
+
+        model_user_text = transcript_text
+        if transcript_text == "I could not hear clear speech.":
+            model_user_text = "The user audio was silent or unclear. Ask them politely to repeat."
 
         turn_start = time.monotonic()
         try:
             result = await pipeline.handle_text_turn(
                 session=session,
                 persona=persona,
-                user_text=full_text,
+                user_text=model_user_text,
                 language_hint=current_language,
             )
 
@@ -156,24 +130,27 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
             assistant_lang = result.get("assistant_language", current_language or "en")
 
             # Send response text
-            await websocket.send_json({
+            if not await safe_send_json({
                 "type": "response",
                 "text": assistant_text,
                 "language": assistant_lang,
-            })
+            }):
+                return
 
             # Handle escalation
             if result.get("escalation_needed"):
-                await websocket.send_json({
+                if not await safe_send_json({
                     "type": "escalation",
                     "message": result.get("escalation_summary", "Escalation triggered."),
-                })
+                }):
+                    return
 
             # Stream TTS audio chunks
             audio_stream = result.get("audio_stream")
             if audio_stream:
                 async for chunk in audio_stream:
-                    await websocket.send_bytes(chunk)
+                    if not await safe_send_bytes(chunk):
+                        return
 
             turn_end = time.monotonic()
             latency_ms = int((turn_end - turn_start) * 1000)
@@ -181,27 +158,25 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
                 "Turn latency: %dms | Session: %s | Text: %.40s...",
                 latency_ms,
                 session.session_id,
-                full_text,
+                transcript_text,
             )
         except Exception as exc:
             logger.error("Pipeline error: %s", exc)
-            await websocket.send_json({"type": "error", "message": "Something went wrong, please try again."})
-
-    # Deepgram reader task
-    dg_reader_task: asyncio.Task[None] | None = None
+            await safe_send_json({"type": "error", "message": "Something went wrong, please try again."})
 
     try:
         while True:
-            message = await websocket.receive()
+            try:
+                message = await websocket.receive()
+            except RuntimeError as exc:
+                if "disconnect message" in str(exc):
+                    break
+                raise
 
             # Binary = raw audio from mic
             if "bytes" in message and message["bytes"]:
                 raw_audio = message["bytes"]
-                if dg_ws is None:
-                    await open_deepgram()
-                    dg_reader_task = asyncio.create_task(read_deepgram_results())
-                if dg_ws and not dg_ws.closed:
-                    await dg_ws.send_bytes(raw_audio)
+                audio_buffer.append(raw_audio)
                 continue
 
             text_data = message.get("text")
@@ -217,24 +192,6 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
             message_type = payload.get("type")
 
             if message_type == "end_of_speech":
-                # Close Deepgram to flush final results
-                if dg_ws and not dg_ws.closed:
-                    try:
-                        await dg_ws.send_str(json.dumps({"type": "CloseStream"}))
-                    except Exception:
-                        pass
-
-                # Wait for reader task to finish
-                if dg_reader_task:
-                    try:
-                        await asyncio.wait_for(dg_reader_task, timeout=5.0)
-                    except asyncio.TimeoutError:
-                        dg_reader_task.cancel()
-                    dg_reader_task = None
-
-                await close_deepgram()
-
-                # Process the utterance
                 await process_full_utterance()
 
             elif message_type == "switch_persona":
@@ -249,7 +206,7 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
                     # Create a new session for the new persona
                     session = session_svc.create_session(persona.id)
                     current_language = None
-                    final_transcript_parts = []
+                    audio_buffer = []
 
             elif message_type == "end_session":
                 summary_data = await session_svc.end_session(session.session_id)
@@ -262,7 +219,3 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
         logger.info("Browser WS disconnected: session %s", session.session_id)
     except Exception as exc:
         logger.error("Browser WS error: %s", exc)
-    finally:
-        if dg_reader_task:
-            dg_reader_task.cancel()
-        await close_deepgram()

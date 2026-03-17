@@ -52,7 +52,7 @@ class PipelineService:
         )
         session.messages.append(assistant_message)
 
-        audio_stream: AsyncIterator[bytes] = self._murf.stream_speech(
+        audio_stream: AsyncIterator[bytes] = self._murf.stream(
             text=assistant_message.content,
             voice_config=persona.voice_config.model_dump(),
         )

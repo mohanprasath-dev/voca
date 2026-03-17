@@ -13,7 +13,7 @@ from models.session import Message
 class GeminiService:
     """Gemini Flash client for persona-grounded conversational reasoning."""
 
-    MAX_HISTORY_TURNS = 10
+    MAX_HISTORY_TURNS = 6
 
     def __init__(self, timeout_seconds: float = 30.0) -> None:
         self._api_key = settings.gemini_api_key
@@ -92,8 +92,8 @@ class GeminiService:
             },
             "contents": self._build_contents(messages),
             "generationConfig": {
-                "temperature": 0.4,
-                "maxOutputTokens": 500,
+                "temperature": 0.2,
+                "maxOutputTokens": 120,
             },
         }
 

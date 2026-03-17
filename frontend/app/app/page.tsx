@@ -15,7 +15,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 const NOTICE_AUTO_HIDE_MS = 2500;
 const AUDIO_WAIT_NOTICE_MS = 20000;
 const AUDIO_WAIT_TIMEOUT_MS = 30000;
-const PLAYBACK_END_FALLBACK_PADDING_MS = 500;
+const AUDIO_STREAM_SAMPLE_RATE = 24000;
+const AUDIO_STREAM_IDLE_MS = 350;
 
 export default function VocaPage() {
   const { personas, activePersona, setActivePersona, isLoading, loadError, retryLoad } = usePersona();
@@ -35,11 +36,15 @@ export default function VocaPage() {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [latencyMs, setLatencyMs] = useState<number>(0);
 
-  const audioChunksRef = useRef<ArrayBuffer[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const playbackProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const pcmQueueRef = useRef<Int16Array[]>([]);
+  const activePcmChunkRef = useRef<Int16Array | null>(null);
+  const activePcmOffsetRef = useRef<number>(0);
+  const playbackLastChunkTsRef = useRef<number>(0);
+  const playbackActiveRef = useRef<boolean>(false);
   const audioWaitTimeoutRef = useRef<number | null>(null);
   const audioWaitNoticeTimeoutRef = useRef<number | null>(null);
-  const playbackFallbackTimeoutRef = useRef<number | null>(null);
   const activePersonaRef = useRef(activePersona);
   const transcriptEntriesRef = useRef<TranscriptEntry[]>([]);
   const sessionStartMsRef = useRef<number | null>(null);
@@ -73,9 +78,68 @@ export default function VocaPage() {
   }, []);
 
   const clearPlaybackFallbackTimeout = useCallback(() => {
-    if (playbackFallbackTimeoutRef.current !== null) {
-      window.clearTimeout(playbackFallbackTimeoutRef.current);
-      playbackFallbackTimeoutRef.current = null;
+    // Kept for compatibility with existing cleanup call sites.
+  }, []);
+
+  const ensurePlaybackChain = useCallback(async () => {
+    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+      audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({
+        sampleRate: AUDIO_STREAM_SAMPLE_RATE,
+      });
+    }
+
+    if (audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
+
+    if (!playbackProcessorRef.current) {
+      const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (event) => {
+        const output = event.outputBuffer.getChannelData(0);
+        let outIdx = 0;
+
+        while (outIdx < output.length) {
+          if (!activePcmChunkRef.current || activePcmOffsetRef.current >= activePcmChunkRef.current.length) {
+            activePcmChunkRef.current = pcmQueueRef.current.shift() ?? null;
+            activePcmOffsetRef.current = 0;
+            if (!activePcmChunkRef.current) {
+              break;
+            }
+          }
+
+          const chunk = activePcmChunkRef.current;
+          const remainingChunk = chunk.length - activePcmOffsetRef.current;
+          const remainingOut = output.length - outIdx;
+          const copyCount = Math.min(remainingChunk, remainingOut);
+
+          for (let i = 0; i < copyCount; i++) {
+            output[outIdx + i] = chunk[activePcmOffsetRef.current + i] / 32768;
+          }
+
+          outIdx += copyCount;
+          activePcmOffsetRef.current += copyCount;
+
+          if (activePcmOffsetRef.current >= chunk.length) {
+            activePcmChunkRef.current = null;
+            activePcmOffsetRef.current = 0;
+          }
+        }
+
+        while (outIdx < output.length) {
+          output[outIdx] = 0;
+          outIdx += 1;
+        }
+
+        const queueEmpty = pcmQueueRef.current.length === 0 && activePcmChunkRef.current === null;
+        const idleForMs = Date.now() - playbackLastChunkTsRef.current;
+        if (queueEmpty && playbackActiveRef.current && idleForMs > AUDIO_STREAM_IDLE_MS) {
+          playbackActiveRef.current = false;
+          setOrbState('idle');
+        }
+      };
+
+      processor.connect(audioContextRef.current.destination);
+      playbackProcessorRef.current = processor;
     }
   }, []);
 
@@ -97,7 +161,7 @@ export default function VocaPage() {
     startAudioWaitTimeout();
   }, [startAudioWaitTimeout]);
 
-  const { startListening, audioLevel, error } = useVoice(handleAudioChunk, {
+  const { startListening, stopListening, audioLevel, error } = useVoice(handleAudioChunk, {
     onSpeechEnd: handleSpeechEnd,
   });
 
@@ -156,50 +220,6 @@ export default function VocaPage() {
     return () => window.clearTimeout(timer);
   }, [error]);
 
-  const playAudioSequence = useCallback(async () => {
-    if (audioChunksRef.current.length === 0) return;
-
-    clearAudioWaitTimeout();
-    clearPlaybackFallbackTimeout();
-
-    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-      audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    }
-
-    const totalLength = audioChunksRef.current.reduce((acc, chunk) => acc + chunk.byteLength, 0);
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of audioChunksRef.current) {
-      combined.set(new Uint8Array(chunk), offset);
-      offset += chunk.byteLength;
-    }
-    
-    audioChunksRef.current = [];
-
-    try {
-      const audioBuffer = await audioContextRef.current.decodeAudioData(combined.buffer);
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContextRef.current.destination);
-
-      source.onended = () => {
-        clearPlaybackFallbackTimeout();
-        setOrbState('idle');
-      };
-
-      setOrbState('speaking');
-      source.start();
-
-      const fallbackDurationMs = Math.ceil(audioBuffer.duration * 1000) + PLAYBACK_END_FALLBACK_PADDING_MS;
-      playbackFallbackTimeoutRef.current = window.setTimeout(() => {
-        setOrbState('idle');
-      }, fallbackDurationMs);
-    } catch (e) {
-      console.error("Failed to decode audio", e);
-      setOrbState('idle');
-    }
-  }, [clearAudioWaitTimeout, clearPlaybackFallbackTimeout]);
-
   useEffect(() => {
     if (!activePersonaId) return;
 
@@ -242,8 +262,6 @@ export default function VocaPage() {
           });
           setHasLanguageDetection(true);
           setLatencyMs(vocaWS.latencyMs);
-
-          void playAudioSequence();
         } else if (message.type === 'escalation') {
            setEscalation(message.message as string);
         } else if (message.type === 'session_summary') {
@@ -275,8 +293,11 @@ export default function VocaPage() {
       },
       (chunk: ArrayBuffer) => {
         clearAudioWaitTimeout();
-        audioChunksRef.current.push(chunk);
-        setOrbState(prev => prev !== 'speaking' ? 'processing' : prev);
+        playbackLastChunkTsRef.current = Date.now();
+        playbackActiveRef.current = true;
+        pcmQueueRef.current.push(new Int16Array(chunk.slice(0)));
+        setOrbState('speaking');
+        void ensurePlaybackChain();
       },
       (connected: boolean) => {
         if (stillMounted) {
@@ -289,6 +310,18 @@ export default function VocaPage() {
       stillMounted = false;
       clearAudioWaitTimeout();
       clearPlaybackFallbackTimeout();
+      if (playbackProcessorRef.current) {
+        playbackProcessorRef.current.disconnect();
+        playbackProcessorRef.current = null;
+      }
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        void audioContextRef.current.close();
+      }
+      audioContextRef.current = null;
+      pcmQueueRef.current = [];
+      activePcmChunkRef.current = null;
+      activePcmOffsetRef.current = 0;
+      playbackActiveRef.current = false;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePersonaId]);
@@ -297,6 +330,8 @@ export default function VocaPage() {
     if (orbState === 'idle') {
       const started = await startListening();
       setOrbState(started ? 'listening' : 'idle');
+    } else if (orbState === 'listening') {
+      stopListening();
     }
   };
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any
 
 import httpx
@@ -19,24 +19,24 @@ class MurfService:
     def _build_payload(self, text: str, voice_config: dict[str, Any]) -> dict[str, Any]:
         return {
             "text": text,
-            "voice_id": voice_config.get("murf_voice_id"),
+            "voiceId": voice_config.get("murf_voice_id"),
             "style": voice_config.get("murf_style"),
             "language": voice_config.get("language", "en-IN"),
-            "format": "pcm",
-            "sample_rate": 16000,
+            "format": "PCM",
+            "sampleRate": 24000,
         }
 
     def _build_headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self._api_key}",
+            "api-key": self._api_key,
             "Content-Type": "application/json",
         }
 
-    async def stream_speech(
+    async def stream(
         self,
         text: str,
         voice_config: dict[str, Any],
-    ) -> AsyncIterator[bytes]:
+    ) -> AsyncGenerator[bytes, None]:
         payload = self._build_payload(text=text, voice_config=voice_config)
         headers = self._build_headers()
 
@@ -48,9 +48,17 @@ class MurfService:
                 json=payload,
             ) as response:
                 response.raise_for_status()
-                async for chunk in response.aiter_bytes():
+                async for chunk in response.aiter_bytes(chunk_size=4096):
                     if chunk:
                         yield chunk
+
+    async def stream_speech(
+        self,
+        text: str,
+        voice_config: dict[str, Any],
+    ) -> AsyncIterator[bytes]:
+        async for chunk in self.stream(text=text, voice_config=voice_config):
+            yield chunk
 
     async def synthesize_once(self, text: str, voice_config: dict[str, Any]) -> bytes:
         payload = self._build_payload(text=text, voice_config=voice_config)

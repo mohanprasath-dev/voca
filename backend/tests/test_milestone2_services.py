@@ -89,7 +89,7 @@ class TestMurfService(unittest.IsolatedAsyncioTestCase):
                 "language": "en-IN",
             },
         )
-        self.assertEqual(payload["voice_id"], "v1")
+        self.assertEqual(payload["voiceId"], "v1")
         self.assertEqual(payload["style"], "natural")
         self.assertEqual(payload["language"], "en-IN")
 
@@ -158,7 +158,7 @@ class TestGeminiService(unittest.IsolatedAsyncioTestCase):
 class TestPipelineService(unittest.IsolatedAsyncioTestCase):
     async def test_handle_text_turn_wires_services(self) -> None:
         class FakeMurf:
-            async def stream_speech(self, text, voice_config):
+            async def stream(self, text, voice_config):
                 self.last_text = text
                 self.last_voice_config = voice_config
                 yield b"fake-audio"
