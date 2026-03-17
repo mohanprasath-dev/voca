@@ -3,7 +3,7 @@ export type AudioHandler = (chunk: ArrayBuffer) => void;
 export type ConnectionStatusHandler = (connected: boolean) => void;
 
 export interface VocaMessage {
-  type: 'persona_loaded' | 'transcript' | 'language_changed' | 'response' | 'escalation' | 'session_summary' | 'error';
+  type: 'persona_loaded' | 'transcript' | 'language_changed' | 'response' | 'escalation' | 'session_summary' | 'error' | 'pong';
   [key: string]: unknown;
 }
 
@@ -15,13 +15,14 @@ class VocaWebSocket {
   private onConnectionStatus: ConnectionStatusHandler | null = null;
   private _isConnected: boolean = false;
   private _latencyMs: number = 0;
-  private speechStartTime: number | null = null;
   private reconnectAttempts: number = 0;
   private readonly MAX_RECONNECT = 3;
   private readonly RECONNECT_DELAY_MS = 2000;
   private readonly STABLE_CONNECTION_MS = 1000;
+  private readonly PING_INTERVAL_MS = 5000;
   private reconnectTimer: number | null = null;
   private stabilityTimer: number | null = null;
+  private pingTimer: number | null = null;
   private connectedAt: number | null = null;
   private connectionInProgress: boolean = false;
   private allowReconnect: boolean = false;
@@ -73,6 +74,29 @@ class VocaWebSocket {
     }
   }
 
+  private clearPingTimer(): void {
+    if (this.pingTimer !== null) {
+      window.clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
+  }
+
+  private sendPing(): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    this.ws.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+  }
+
+  private startPingLoop(): void {
+    this.clearPingTimer();
+    this.sendPing();
+    this.pingTimer = window.setInterval(() => {
+      this.sendPing();
+    }, this.PING_INTERVAL_MS);
+  }
+
   private _connect() {
     if (!this.personaId) return;
     if (this.ws?.readyState === WebSocket.CONNECTING || this.connectionInProgress) return;
@@ -88,6 +112,7 @@ class VocaWebSocket {
       this.connectionInProgress = false;
       this.connectedAt = Date.now();
       this.allowReconnect = false;
+      this.startPingLoop();
       this.clearStabilityTimer();
       this.stabilityTimer = window.setTimeout(() => {
         if (this.ws?.readyState === WebSocket.OPEN) {
@@ -105,12 +130,14 @@ class VocaWebSocket {
       } else if (typeof event.data === 'string') {
         try {
           const message = JSON.parse(event.data) as VocaMessage;
-          
-          if (message.type === 'response' && this.speechStartTime !== null) {
-            this._latencyMs = Date.now() - this.speechStartTime;
-            this.speechStartTime = null; // Reset until next speech
+
+          if (message.type === 'pong') {
+            const ts = typeof message.ts === 'number' ? message.ts : Number(message.ts);
+            if (Number.isFinite(ts)) {
+              this._latencyMs = Math.max(0, Date.now() - ts);
+            }
           }
-          
+
           if (this.onMessage) {
             this.onMessage(message);
           }
@@ -129,6 +156,7 @@ class VocaWebSocket {
       this.connectionInProgress = false;
       this.connectedAt = null;
       this.clearStabilityTimer();
+      this.clearPingTimer();
       this.ws = null;
 
       if (this.intentionalClose || event.code === 1000) {
@@ -165,6 +193,7 @@ class VocaWebSocket {
     this.intentionalClose = true;
     this.clearReconnectTimer();
     this.clearStabilityTimer();
+    this.clearPingTimer();
     this.reconnectAttempts = this.MAX_RECONNECT;
     this.connectionInProgress = false;
     this.allowReconnect = false;
@@ -187,7 +216,6 @@ class VocaWebSocket {
 
   sendEndOfSpeech(): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.speechStartTime = Date.now();
       this.ws.send(JSON.stringify({ type: 'end_of_speech' }));
     }
   }

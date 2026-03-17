@@ -12,6 +12,10 @@ from config import settings
 class DeepgramService:
     """Deepgram Nova-3 streaming STT helper utilities."""
 
+    PCM_SAMPLE_RATE = 16000
+    PCM_CHANNELS = 1
+    PCM_BITS_PER_SAMPLE = 16
+
     def __init__(self) -> None:
         self._api_key = settings.deepgram_api_key
         self._base_ws_url = "wss://api.deepgram.com/v1/listen"
@@ -74,8 +78,8 @@ class DeepgramService:
         params: dict[str, str] = {
             "model": "nova-3",
             "encoding": "linear16",
-            "sample_rate": "16000",
-            "channels": "1",
+            "sample_rate": str(self.PCM_SAMPLE_RATE),
+            "channels": str(self.PCM_CHANNELS),
             "punctuate": "true",
             "smart_format": "true",
         }
@@ -130,7 +134,12 @@ class DeepgramService:
         return header + audio_bytes
 
     async def transcribe_bytes(self, audio_bytes: bytes) -> tuple[str, str]:
-        wav_bytes = self._pcm16_to_wav(audio_bytes)
+        wav_bytes = self._pcm16_to_wav(
+            audio_bytes,
+            sample_rate=self.PCM_SAMPLE_RATE,
+            channels=self.PCM_CHANNELS,
+            bits_per_sample=self.PCM_BITS_PER_SAMPLE,
+        )
         params = {
             "model": "nova-2",
             "language": "multi",

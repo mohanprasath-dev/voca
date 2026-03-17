@@ -92,7 +92,16 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void, options: Us
       }
 
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          sampleSize: 16,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
       streamRef.current = stream;
 
       stream.getAudioTracks().forEach((track) => {
@@ -128,14 +137,14 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void, options: Us
 
       processor.onaudioprocess = (e) => {
         if (!isListeningRef.current) return; // Prevent sending if just stopping
-        const inputData = e.inputBuffer.getChannelData(0);
+        const float32Buffer = e.inputBuffer.getChannelData(0);
 
         // Calculate audio level (RMS)
         let sum = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sum += inputData[i] * inputData[i];
+        for (let i = 0; i < float32Buffer.length; i++) {
+          sum += float32Buffer[i] * float32Buffer[i];
         }
-        const rms = Math.sqrt(sum / inputData.length);
+        const rms = Math.sqrt(sum / float32Buffer.length);
 
         if (rms > SPEECH_DETECTED_RMS_THRESHOLD) {
           speechDetectedRef.current = true;
@@ -159,10 +168,10 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void, options: Us
         setAudioLevel(level);
 
         // Convert Float32Array to Int16Array for WebSocket transmission
-        const pcmData = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-          let s = Math.max(-1, Math.min(1, inputData[i]));
-          pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        const pcmData = new Int16Array(float32Buffer.length);
+        for (let i = 0; i < float32Buffer.length; i++) {
+          const sample = Math.max(-32768, Math.min(32767, float32Buffer[i] * 32768));
+          pcmData[i] = sample;
         }
 
         onAudioChunk(pcmData.buffer);

@@ -261,6 +261,7 @@ export default function VocaPage() {
             return next;
           });
           setHasLanguageDetection(true);
+        } else if (message.type === 'pong') {
           setLatencyMs(vocaWS.latencyMs);
         } else if (message.type === 'escalation') {
            setEscalation(message.message as string);

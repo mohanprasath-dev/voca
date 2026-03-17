@@ -191,7 +191,10 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
 
             message_type = payload.get("type")
 
-            if message_type == "end_of_speech":
+            if message_type == "ping":
+                await safe_send_json({"type": "pong", "ts": payload.get("ts")})
+
+            elif message_type == "end_of_speech":
                 await process_full_utterance()
 
             elif message_type == "switch_persona":
