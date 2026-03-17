@@ -6,7 +6,8 @@
   --bg: #080A0F;
   --bg-surface: #0F1117;
   --bg-elevated: #161B24;
-  --border: rgba(255,255,255,0.08);
+  --bg-glass: rgba(255, 255, 255, 0.03);
+  --border: rgba(255, 255, 255, 0.06);
   --text-primary: #F0F2F5;
   --text-secondary: #8B92A0;
   --text-mono: #A8B5C8;

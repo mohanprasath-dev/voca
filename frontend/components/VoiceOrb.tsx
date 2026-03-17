@@ -29,102 +29,86 @@ const SpeakerIcon = ({ color }: { color?: string }) => (
   </svg>
 );
 
+const SpinnerIcon = ({ color }: { color?: string }) => (
+  <motion.svg 
+    animate={{ rotate: 360 }}
+    transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+    width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={color || "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+  >
+    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+  </motion.svg>
+);
+
 export default function VoiceOrb({ state, audioLevel, onClick, color }: VoiceOrbProps) {
   const isClickable = state === 'idle' || state === 'listening';
-
-  let scale = 1;
-  if (state === 'idle') scale = 1;
-  if (state === 'listening') scale = 1 + audioLevel * 0.4;
-  if (state === 'processing') scale = 0.95;
-  if (state === 'speaking') scale = 1.05;
+  const ORB_SIZE = 240;
 
   return (
-    <div className="relative flex items-center justify-center w-72 h-72">
+    <div className="relative flex items-center justify-center w-[450px] h-[450px]">
       <AnimatePresence>
-        {state === 'speaking' && [0, 1, 2].map((i) => (
+        {state === 'idle' && (
+          <motion.div
+            key="idle-ring"
+            className="absolute rounded-full pointer-events-none"
+            initial={{ width: 280, height: 280, opacity: 0.05 }}
+            animate={{ width: 280, height: 280, opacity: 0.1 }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', repeatType: 'reverse' }}
+            style={{ border: `1px solid ${color}` }}
+          />
+        )}
+
+        {state === 'speaking' && [0, 1, 2, 3].map((i) => (
           <motion.div
             key={`speak-${i}`}
             className="absolute rounded-full pointer-events-none"
-            initial={{ width: 160, height: 160, opacity: 0.5, border: `1px solid ${color}` }}
-            animate={{ width: 300 + i * 60, height: 300 + i * 60, opacity: 0 }}
-            transition={{
-              duration: 2,
-              delay: i * 0.4,
-              repeat: Infinity,
-              ease: "easeOut"
-            }}
+            initial={{ width: ORB_SIZE, height: ORB_SIZE, opacity: 0.3, border: `1px solid ${color}` }}
+            animate={{ width: ORB_SIZE + 100 + i * 80, height: ORB_SIZE + 100 + i * 80, opacity: 0 }}
+            transition={{ duration: 3, delay: i * 0.75, repeat: Infinity, ease: 'linear' }}
           />
         ))}
 
-        {state === 'listening' && [1, 2, 3, 4].map((i) => {
-          const baseOpacity = 0.6 - (i * 0.12);
-          const ringScale = 1 + (audioLevel * (0.8 + i * 0.3)) + (i * 0.15);
-          const isHigh = audioLevel > 0.4;
+        {state === 'listening' && [0, 1, 2, 3].map((i) => {
+          const ringRadii = [280, 320, 360, 400];
+          const radius = ringRadii[i];
+          const opacityVal = Math.max(0.05, audioLevel * (0.6 - i * 0.15));
           
           return (
             <motion.div
               key={`listen-${i}`}
               className="absolute rounded-full pointer-events-none"
-              initial={{ width: 160, height: 160, opacity: 0, scale: 1 }}
               animate={{
-                scale: ringScale,
-                opacity: audioLevel < 0.05 ? baseOpacity * 0.4 : baseOpacity,
-                boxShadow: isHigh ? `0 0 ${15 + i * 5}px ${color}` : 'none'
+                width: radius + (audioLevel * 20),
+                height: radius + (audioLevel * 20),
+                opacity: opacityVal,
               }}
-              transition={{
-                type: 'spring',
-                stiffness: 300 - (i * 30),
-                damping: 20 + i,
-                mass: 0.5
-              }}
-              style={{
-                border: `1.5px solid ${color}`,
-              }}
+              transition={{ type: 'spring', stiffness: 400 - (i * 50), damping: 25, mass: 0.5 }}
+              style={{ border: `1px solid ${color}` }}
             />
           );
         })}
       </AnimatePresence>
+
       <motion.button
         onClick={isClickable ? onClick : undefined}
         className="relative flex items-center justify-center rounded-full focus:outline-none z-10"
         animate={{
-          scale: state === 'idle' ? [0.97, 1.03, 0.97] : scale,
-          background: `radial-gradient(circle, ${color}33 0%, transparent 60%)`, // 20% opacity center
-          borderColor: color,            // Border uses color prop
-          boxShadow: `0 0 60px 10px ${color}4D`, // Box shadow glow at 30% opacity
+          background: `radial-gradient(circle, ${color}20 0%, ${color}08 50%, transparent 100%)`,
+          boxShadow: `0 0 60px ${color}20, 0 0 120px ${color}10`,
+          borderColor: `${color}40`,
         }}
-        transition={
-          state === 'idle'
-            ? { duration: 4, repeat: Infinity, ease: "easeInOut" }
-            : { type: 'spring', stiffness: 300, damping: 20, mass: 0.5 }
-        }
         style={{
-          width: 160,
-          height: 160,
+          width: ORB_SIZE,
+          height: ORB_SIZE,
           borderWidth: 1,
           borderStyle: 'solid',
           cursor: isClickable ? 'pointer' : 'default',
         }}
-        whileTap={isClickable ? { scale: 0.9 } : undefined}
+        whileTap={isClickable ? { scale: 0.95 } : undefined}
       >
-        <motion.div
-          animate={{ color }}
-          transition={{ duration: 0.4 }}
-          className="flex items-center justify-center"
-        >
-          {state === 'idle' && <MicIcon color={color} />}
-          {state === 'listening' && <MicIcon color={color} />}
-          
-          {state === 'processing' && (
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
-              className="w-8 h-8 rounded-full border-2 border-t-transparent"
-              style={{ borderColor: `${color}4D`, borderTopColor: color }}
-            />
-          )}
-          
+        <motion.div animate={{ color }} transition={{ duration: 0.4 }} className="flex items-center justify-center">
+          {(state === 'idle' || state === 'listening') && <MicIcon color={color} />}
           {state === 'speaking' && <SpeakerIcon color={color} />}
+          {state === 'processing' && <SpinnerIcon color={color} />}
         </motion.div>
       </motion.button>
     </div>

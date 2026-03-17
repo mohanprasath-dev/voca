@@ -57,7 +57,7 @@ export default function VocaPage() {
   const [sessionStartMs, setSessionStartMs] = useState<number | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isEndingSession, setIsEndingSession] = useState<boolean>(false);
-  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [connectionState, setConnectionState] = useState<'ready' | 'connected' | 'disconnected'>('ready');
   const [latencyMs] = useState<number>(0);
   const [hasAttemptedSession, setHasAttemptedSession] = useState<boolean>(false);
 
@@ -202,8 +202,8 @@ export default function VocaPage() {
     for (const element of audioElementsRef.current) {
       element.remove();
     }
-    audioElementsRef.current = [];
-    setIsConnected(false);
+    setIsEndingSession(false); // Reset just in case
+    setConnectionState((prev) => prev === 'connected' ? 'disconnected' : 'ready');
   }, [clearProcessingTimeout, clearSpeakingSilenceTimeout]);
 
   const appendAgentAudio = useCallback((track: RemoteTrack, participant: RemoteParticipant) => {
@@ -245,12 +245,12 @@ export default function VocaPage() {
     roomRef.current = room;
 
     room.on(RoomEvent.Connected, () => {
-      setIsConnected(true);
+      setConnectionState('connected');
       setPendingPersonaId(null);
     });
 
     room.on(RoomEvent.Disconnected, () => {
-      setIsConnected(false);
+      setConnectionState('disconnected');
       setOrbState('idle');
       clearProcessingTimeout();
       clearSpeakingSilenceTimeout();
@@ -339,7 +339,13 @@ export default function VocaPage() {
       return;
     }
 
-    if (orbState === 'processing' || orbState === 'speaking') {
+    if (orbState === 'processing') {
+      return;
+    }
+
+    if (orbState === 'speaking' && roomRef.current?.state === 'connected') {
+      void roomRef.current.localParticipant.setMicrophoneEnabled(true);
+      setOrbState('listening');
       return;
     }
 
@@ -489,97 +495,107 @@ export default function VocaPage() {
   }
 
   const currentAccent = activePersona?.ui_config.accent_color || '#00C2B8';
-  const hasCompletedExchange = transcriptEntries.some((entry) => entry.role === 'user')
-    && transcriptEntries.some((entry) => entry.role === 'voca');
   return (
     <motion.main
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="min-h-screen flex flex-col font-sans overflow-hidden"
-      style={{ backgroundColor: '#080A0F' }}
+      className="min-h-screen flex flex-col font-sans overflow-hidden relative"
+      style={{ backgroundColor: 'var(--bg)' }}
       transition={{ duration: 0.4 }}
     >
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `radial-gradient(circle at 50% 50%, ${currentAccent}08 0%, transparent 60%)`,
-            transition: 'background 0.4s ease-in-out',
-          }}
+      {/* Background Animated Orbs */}
+      <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <motion.div
+          animate={{ x: ['-5%', '5%', '-5%'], y: ['-5%', '5%', '-5%'] }}
+          transition={{ duration: 25, repeat: Infinity, ease: 'linear' }}
+          className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full opacity-[0.04] bg-teal-500 blur-[100px]"
         />
+        <motion.div
+          animate={{ x: ['5%', '-5%', '5%'], y: ['5%', '-5%', '5%'] }}
+          transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
+          className="absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full opacity-[0.05] bg-amber-500 blur-[120px]"
+        />
+        <motion.div
+          animate={{ x: ['0%', '10%', '0%'], y: ['10%', '0%', '10%'] }}
+          transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+          className="absolute bottom-[-10%] left-[20%] w-[60vw] h-[60vw] rounded-full opacity-[0.03] bg-indigo-500 blur-[150px]"
+        />
+      </div>
 
-        <div className="w-full flex items-center justify-between p-6 z-10">
-          <div className="flex-1" />
-          <div className="flex-1 flex justify-center">
-            <PersonaSwitcher
-              personas={personas}
-              activePersona={activePersona}
-              onSwitch={(persona) => {
-                void handlePersonaSwitch(persona);
+      <div className="w-full flex items-center justify-between p-6 z-10">
+        <div className="flex-1">
+          <a href="/" className="font-syne text-sm font-bold tracking-widest text-white hover:opacity-80 transition-opacity">
+            VOCA
+          </a>
+        </div>
+        <div className="flex-1 flex justify-center">
+          <PersonaSwitcher
+            personas={personas}
+            activePersona={activePersona}
+            onSwitch={(persona) => {
+              void handlePersonaSwitch(persona);
+            }}
+            disabled={orbState !== 'idle'}
+            pendingPersonaId={pendingPersonaId}
+          />
+        </div>
+        <div className="flex-1 flex justify-end items-center gap-4">
+          {hasLanguageDetection && (
+            <LanguageBadge
+              language={currentLanguage}
+              changed={languageChanged}
+              accentColor={currentAccent}
+            />
+          )}
+          <div className="flex items-center gap-2">
+            <motion.div 
+              animate={{
+                backgroundColor: connectionState === 'connected' ? '#10B981' : connectionState === 'disconnected' ? '#EF4444' : '#8B92A0',
+                boxShadow: connectionState === 'connected' ? '0 0 8px #10B981' : connectionState === 'disconnected' ? '0 0 8px #EF4444' : '0 0 8px transparent'
               }}
-              disabled={orbState !== 'idle'}
-              pendingPersonaId={pendingPersonaId}
+              className="w-2 h-2 rounded-full"
             />
           </div>
-          <div className="flex-1 flex justify-end">
-            {hasLanguageDetection && (
-              <LanguageBadge
-                language={currentLanguage}
-                changed={languageChanged}
-                accentColor={currentAccent}
-              />
-            )}
+        </div>
+      </div>
+
+      {hasAttemptedSession && connectionState === 'disconnected' && (
+        <div className="px-6 z-20 absolute top-20 left-1/2 -translate-x-1/2">
+          <div className="mx-auto max-w-2xl rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-2 text-center text-xs font-mono text-red-300 backdrop-blur-md">
+            Server disconnected.
+            <button
+              onClick={() => {
+                void handleOrbClick();
+              }}
+              className="ml-2 underline underline-offset-2 hover:text-white"
+            >
+              Retry
+            </button>
           </div>
         </div>
+      )}
 
-        {hasAttemptedSession && !isConnected && (
-          <div className="px-6 z-10">
-            <div className="mx-auto max-w-2xl rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-2 text-center text-xs font-mono text-red-300">
-              Server disconnected.
-              <button
-                onClick={() => {
-                  void handleOrbClick();
-                }}
-                className="ml-2 underline underline-offset-2 hover:text-white"
-              >
-                Retry
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="flex-1 flex flex-col items-center justify-center gap-16 pb-24 px-4 z-10">
-          <AnimatePresence>
-            {escalation && (
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="bg-red-500/10 border border-red-500/20 text-red-400 px-6 py-3 rounded-2xl text-xs font-mono max-w-xl text-center backdrop-blur-md"
-              >
-                {escalation}
-              </motion.div>
-            )}
-
-            {notice && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="bg-red-500/10 border border-red-500/25 text-red-300 px-5 py-2 rounded-xl text-xs font-mono text-center backdrop-blur-md"
-              >
-                {notice}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
+      <div className="flex-1 flex flex-col items-center justify-start pt-10 gap-8 pb-24 px-4 z-10 h-full overflow-hidden">
+        <div className="flex flex-col items-center gap-6 shrink-0">
           <VoiceOrb
             state={orbState}
             audioLevel={0}
             onClick={handleOrbClick}
-            color={activePersona?.ui_config.orb_color || '#00C2B8'}
+            color={activePersona?.ui_config.orb_color || currentAccent}
           />
 
-          <div className="-mt-8 flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-2 mt-2">
+            {activePersona && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-sm uppercase tracking-widest font-semibold mt-2"
+                style={{ color: currentAccent }}
+              >
+                {activePersona.name}
+              </motion.p>
+            )}
+
             <AnimatePresence mode="wait">
               <motion.p
                 key={orbState}
@@ -587,7 +603,7 @@ export default function VocaPage() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -5 }}
                 transition={{ duration: 0.2 }}
-                className="text-xs font-mono uppercase tracking-[0.2em] text-[#8B92A0]"
+                className="text-xs text-[#8B92A0]"
               >
                 {orbState === 'idle' && 'Click to speak'}
                 {orbState === 'listening' && 'Listening...'}
@@ -595,49 +611,68 @@ export default function VocaPage() {
                 {orbState === 'speaking' && 'Speaking...'}
               </motion.p>
             </AnimatePresence>
-
-            {activePersona?.ui_config?.label && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="text-sm text-[#8B92A0]/80 font-light max-w-md text-center"
-              >
-                {activePersona.ui_config.label}
-              </motion.p>
-            )}
           </div>
 
-          {orbState === 'idle' && hasCompletedExchange && !sessionSummary && (
+          {hasAttemptedSession && !sessionSummary && connectionState === 'connected' && (
             <button
               onClick={() => {
                 void handleEndSession();
               }}
               disabled={isEndingSession}
-              className="px-4 py-2 rounded-lg border border-white/15 text-white/90 text-xs font-mono uppercase tracking-wider hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-2.5 mt-4 rounded-full border border-white/10 text-white/90 text-xs font-mono tracking-wider hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed backdrop-blur-sm z-20"
             >
-              {isEndingSession ? 'Ending...' : 'End Session'}
+              {isEndingSession ? 'Ending Session...' : 'End Session'}
             </button>
           )}
-
-          <div className="w-full max-w-3xl flex-1 flex flex-col justify-end">
-            <AnimatePresence mode="wait">
-              {sessionSummary ? (
-                <SummaryPanel summary={sessionSummary} onNewConversation={() => {
-                  void handleNewConversation();
-                }} />
-              ) : (
-                <Transcript entries={transcriptEntries} accentColor={currentAccent} />
-              )}
-            </AnimatePresence>
-          </div>
         </div>
 
-        <StatusBar
-          connected={isConnected}
-          latencyMs={latencyMs}
-          personaLabel={activePersona?.ui_config.label || ''}
-          accentColor={currentAccent}
-        />
+        <AnimatePresence>
+          {escalation && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-red-500/10 border border-red-500/20 text-red-400 px-6 py-3 rounded-2xl text-xs font-mono max-w-xl text-center backdrop-blur-md shrink-0"
+            >
+              {escalation}
+            </motion.div>
+          )}
+
+          {notice && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-red-500/10 border border-red-500/25 text-red-300 px-5 py-2 rounded-xl text-xs font-mono text-center backdrop-blur-md shrink-0"
+            >
+              {notice}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="w-full flex-1 flex flex-col justify-end min-h-0 relative">
+          <AnimatePresence mode="wait">
+            {sessionSummary ? (
+              <div key="summary" className="absolute bottom-0 w-full flex justify-center pb-4">
+                <SummaryPanel summary={sessionSummary} onNewConversation={() => {
+                  void handleNewConversation();
+                }} accentColor={currentAccent} />
+              </div>
+            ) : transcriptEntries.length > 0 ? (
+              <div key="transcript" className="absolute bottom-0 w-full flex flex-col justify-end">
+                <Transcript entries={transcriptEntries} accentColor={currentAccent} />
+              </div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      <StatusBar
+        connectionState={connectionState}
+        latencyMs={latencyMs}
+        personaLabel={activePersona?.ui_config.label || ''}
+        accentColor={currentAccent}
+      />
     </motion.main>
   );
 }

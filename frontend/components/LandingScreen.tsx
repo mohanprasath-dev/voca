@@ -208,9 +208,9 @@ export default function LandingScreen() {
         <footer className="mt-auto border-t border-white/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-[#8B92A0]">
           <div>Built by Mohan Prasath</div>
           <div className="flex gap-6">
-            <Link href="https://github.com" target="_blank" className="hover:text-white transition-colors">GitHub</Link>
-            <Link href="https://linkedin.com" target="_blank" className="hover:text-white transition-colors">LinkedIn</Link>
-            <Link href="#" className="hover:text-white transition-colors">Website</Link>
+            <Link href="https://github.com/mohanprasath-dev" target="_blank" className="hover:text-white transition-colors">GitHub</Link>
+            <Link href="https://linkedin.com/in/mohanprasath21" target="_blank" className="hover:text-white transition-colors">LinkedIn</Link>
+            <Link href="https://mohanprasath.dev" target="_blank" className="hover:text-white transition-colors">Website</Link>
           </div>
         </footer>
       </div>

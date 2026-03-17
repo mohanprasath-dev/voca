@@ -17,10 +17,8 @@ export function PersonaSwitcher({ personas, activePersona, onSwitch, disabled, p
 
   return (
     <motion.div 
-      className="flex items-center gap-1 p-1 rounded-full border backdrop-blur-md z-10"
+      className="flex items-center gap-2 z-10"
       animate={{
-        backgroundColor: 'rgba(15, 17, 23, 0.6)',
-        borderColor: 'rgba(255, 255, 255, 0.08)',
         opacity: disabled ? 0.5 : 1
       }}
       transition={{ duration: 0.4 }}
@@ -35,11 +33,12 @@ export function PersonaSwitcher({ personas, activePersona, onSwitch, disabled, p
           <motion.button
             key={persona.id}
             onClick={() => onSwitch(persona)}
-            className="relative px-5 py-2 text-xs font-medium rounded-full outline-none"
+            className="relative px-6 py-2 text-xs font-medium rounded-full outline-none hover:brightness-110 transition-all"
             animate={{
-              color: isActive ? '#FFFFFF' : '#8B92A0'
+              color: isActive ? '#FFFFFF' : '#8B92A0',
+              backgroundColor: isActive ? 'transparent' : 'rgba(255, 255, 255, 0.04)'
             }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.3 }}
             style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}
           >
             {isActive && (

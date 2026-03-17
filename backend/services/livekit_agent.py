@@ -56,6 +56,18 @@ def _strip_language_tag(text: str) -> str:
     return LANGUAGE_TAG_RE.sub("", text, count=1).strip()
 
 
+def clean_for_tts(text: str) -> str:
+    # Remove markdown
+    text = re.sub(r'\*+', '', text)
+    text = re.sub(r'#+\s*', '', text)
+    text = re.sub(r'\[LANG:[a-z]{2}\]\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[.*?\]', '', text)
+    text = re.sub(r'\(.*?\)', '', text)
+    # Clean whitespace
+    text = ' '.join(text.split())
+    return text.strip()
+
+
 def _normalize_locale(language: str | None, default_locale: str) -> str:
     if not language:
         return default_locale
@@ -177,10 +189,15 @@ class GeminiLiveKitLLMStream(llm.LLMStream):
 
         try:
             result = await self._llm._gemini_service.generate_livekit_reply(persona=persona, messages=history)
-            raw_reply = str(result["assistant_reply"]).strip()
+            print("LIVEKIT TRACE: generated result dictionary ->", result)
+            raw_reply = str(result.get("assistant_reply", "")).strip()
+            print("LIVEKIT TRACE: extracted raw_reply ->", raw_reply)
             detected_language = _extract_language_tag(raw_reply) or str(result.get("language") or persona.voice_config.language)
             cleaned_reply = _strip_language_tag(raw_reply)
+            print("LIVEKIT TRACE: final cleaned_reply sent to UI & TTS ->", cleaned_reply)
         except Exception as exc:
+            logger.error(f"FULL ERROR: {type(exc).__name__}: {exc}", exc_info=True)
+            logger.error(f"Processing error: {exc}", exc_info=True)
             logger.exception("Failed to generate Gemini LiveKit reply")
             detected_language = self._llm._agent.current_language or str(persona.voice_config.language)
             message_lower = str(exc).lower()
@@ -192,6 +209,8 @@ class GeminiLiveKitLLMStream(llm.LLMStream):
         previous_language = self._llm._agent.current_language
         effective_language = detected_language or previous_language
         self._llm._agent.current_language = effective_language
+
+        cleaned_reply = clean_for_tts(cleaned_reply)
 
         # Emit the assistant text first so TTS can proceed even if downstream
         # persistence/event code fails.
@@ -345,9 +364,8 @@ async def voca_agent(ctx: JobContext) -> None:
 
     session = AgentSession(
         stt=deepgram.STT(
-            model="nova-2",
-            language="en",
-            detect_language=False,
+            model="nova-2-general",
+            detect_language=True,
             smart_format=True,
         ),
         llm=NOT_GIVEN,

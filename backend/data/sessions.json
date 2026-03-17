@@ -1,0 +1,658 @@
+{
+  "sessions": {
+    "ffdf3a31": {
+      "session_id": "ffdf3a31",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:22:07.084602Z",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:22:17.121261Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hello.",
+          "timestamp": "2026-03-17T17:22:17.278417Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:22:22.646483Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Please try that once more.",
+          "timestamp": "2026-03-17T17:22:22.738116Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:22:26.284825Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:22:27.335000Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Okay. Computer processing. Yep.",
+          "timestamp": "2026-03-17T17:22:27.522211Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "faf19d55": {
+      "session_id": "faf19d55",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:22:40.216101Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "75303b3f": {
+      "session_id": "75303b3f",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:33:27.049577Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "38a95512": {
+      "session_id": "38a95512",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:36:25.677287Z",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:36:49.373338Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hello.",
+          "timestamp": "2026-03-17T17:36:50.150566Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:36:57.241316Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hello.",
+          "timestamp": "2026-03-17T17:36:57.353051Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:37:55.478282Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "And on the credit",
+          "timestamp": "2026-03-17T17:37:57.008601Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:38:36.894922Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Maximum all the",
+          "timestamp": "2026-03-17T17:38:46.719595Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:39:13.988235Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:39:15.554532Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "But now here. No. They still have earlier.",
+          "timestamp": "2026-03-17T17:39:15.921265Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:39:21.769727Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:39:24.889004Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:39:27.952892Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Other parts, this this. Uh, 28,000. Uh, they allow 90,000 extra.",
+          "timestamp": "2026-03-17T17:39:28.293974Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "2d6db504": {
+      "session_id": "2d6db504",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:42:14.695145Z",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:42:41.681636Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hello.",
+          "timestamp": "2026-03-17T17:42:42.853056Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:43:03.956906Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Request maximum output hospital",
+          "timestamp": "2026-03-17T17:43:23.151753Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:43:23.263896Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "school, sir.",
+          "timestamp": "2026-03-17T17:43:25.542320Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:43:25.655938Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "It.",
+          "timestamp": "2026-03-17T17:43:30.058789Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:43:30.220663Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "3a02fbe3": {
+      "session_id": "3a02fbe3",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:47:25.628108Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "de8326e9": {
+      "session_id": "de8326e9",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:47:29.245889Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "d671c2aa": {
+      "session_id": "d671c2aa",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:47:37.837790Z",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:48:04.835755Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hello? How are you?",
+          "timestamp": "2026-03-17T17:48:05.395939Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:48:13.383332Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Sure.",
+          "timestamp": "2026-03-17T17:48:13.715747Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "a7d1e520": {
+      "session_id": "a7d1e520",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T17:51:48.017276Z",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:51:54.732633Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hello.",
+          "timestamp": "2026-03-17T17:51:55.557517Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:52:02.373098Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "What's your name?",
+          "timestamp": "2026-03-17T17:52:02.605902Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:56:50.516147Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Open it. I've already patching patching",
+          "timestamp": "2026-03-17T17:56:50.669371Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T17:57:05.220614Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "I don't",
+          "timestamp": "2026-03-17T17:57:07.576612Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "117c6eae": {
+      "session_id": "117c6eae",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T18:00:32.431218Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "11ab69b6": {
+      "session_id": "11ab69b6",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T18:00:49.352919Z",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Okay. Put the pathfinder.",
+          "timestamp": "2026-03-17T18:02:36.437222Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"assistant_reply",
+          "timestamp": "2026-03-17T18:02:37.026489Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hello?",
+          "timestamp": "2026-03-17T18:02:38.114284Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"assistant_reply",
+          "timestamp": "2026-03-17T18:02:40.339508Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "87e568eb": {
+      "session_id": "87e568eb",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T18:06:06.255671Z",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T18:07:22.466057Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T18:07:27.192024Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Account management the project billing",
+          "timestamp": "2026-03-17T18:07:27.810201Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T18:10:49.179945Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hey.",
+          "timestamp": "2026-03-17T18:10:50.099604Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T18:12:32.814678Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "One lakh twenty thousand of this I",
+          "timestamp": "2026-03-17T18:12:38.917758Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T18:13:07.310483Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Thank you.",
+          "timestamp": "2026-03-17T18:13:07.504441Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "c7b65b5b": {
+      "session_id": "c7b65b5b",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T18:38:07.517620Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "07b74857": {
+      "session_id": "07b74857",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T18:39:01.332082Z",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello.",
+          "timestamp": "2026-03-17T18:39:18.247293Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "Hello! How can I assist you today?",
+          "timestamp": "2026-03-17T18:39:18.535964Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "user",
+          "content": "Who are you?",
+          "timestamp": "2026-03-17T18:39:33.265283Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "assistant",
+          "content": "I'm Apex, your technical support agent from TechFlow Inc. How can I help you?",
+          "timestamp": "2026-03-17T18:39:34.407909Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "user",
+          "content": "What does tech flow?",
+          "timestamp": "2026-03-17T18:39:43.741835Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"assistant_reply\":\"[LANG:en]TechFlow Inc. specializes in",
+          "timestamp": "2026-03-17T18:39:44.634186Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "What are the services that you offer?",
+          "timestamp": "2026-03-17T18:40:02.220063Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"assistant_reply\":\"[LANG:en]We offer a range of services including IT support, network solutions, cloud services, and cybersecurity to help businesses optimize their technology.\",\"language\":\"en\",\"escalation_needed\":false,\"escalation_summary\":\"\",\"intent\":\"",
+          "timestamp": "2026-03-17T18:40:03.289419Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Okay. Thank you.",
+          "timestamp": "2026-03-17T18:40:26.950636Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "You're welcome! Is there anything else I can assist you with today?",
+          "timestamp": "2026-03-17T18:40:27.463616Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "user",
+          "content": "Okay. I just count the call.",
+          "timestamp": "2026-03-17T18:40:35.829010Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "assistant",
+          "content": "Thank you for calling TechFlow Inc. Have a great day!",
+          "timestamp": "2026-03-17T18:40:36.109548Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"assistant_reply",
+          "timestamp": "2026-03-17T18:41:50.078651Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "You feel a particular ad. So",
+          "timestamp": "2026-03-17T18:41:54.713963Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I apologize, I didn't quite catch that. Could you please repeat your request?",
+          "timestamp": "2026-03-17T18:43:39.264427Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "user",
+          "content": "willing",
+          "timestamp": "2026-03-17T18:43:40.903201Z",
+          "language_detected": "en"
+        },
+        {
+          "role": "assistant",
+          "content": "Hello! How can I assist you today?",
+          "timestamp": "2026-03-17T18:49:28.742826Z",
+          "language_detected": "en"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "9bd3868a": {
+      "session_id": "9bd3868a",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T18:52:32.198591Z",
+      "messages": [],
+      "summary": {
+        "intent": null,
+        "resolution_status": null,
+        "escalation_needed": false,
+        "sentiment": null,
+        "action_items": []
+      },
+      "caller_number": null
+    },
+    "c29eb41b": {
+      "session_id": "c29eb41b",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T18:54:21.000333Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "a26a2a9f": {
+      "session_id": "a26a2a9f",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T18:55:23.491451Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "30e65a76": {
+      "session_id": "30e65a76",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T20:08:43.005775Z",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T20:09:44.089802Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Hello.",
+          "timestamp": "2026-03-17T20:09:44.518373Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T20:09:52.118142Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "user",
+          "content": "Who are you?",
+          "timestamp": "2026-03-17T20:09:52.151014Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "5d7435e9": {
+      "session_id": "5d7435e9",
+      "persona_id": "apex",
+      "started_at": "2026-03-17T20:11:24.997235Z",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hello.",
+          "timestamp": "2026-03-17T20:11:47.290646Z",
+          "language_detected": "en-US"
+        },
+        {
+          "role": "assistant",
+          "content": "I heard you, but hit a processing issue. Please try that once more.",
+          "timestamp": "2026-03-17T20:11:47.501402Z",
+          "language_detected": "en-US"
+        }
+      ],
+      "summary": null,
+      "caller_number": null
+    },
+    "d920a9ef": {
+      "session_id": "d920a9ef",
+      "persona_id": "aura",
+      "started_at": "2026-03-17T20:12:02.731059Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    }
+  },
+  "summaries_text": {
+    "9bd3868a": "No conversation recorded.",
+    "5d7435e9": "Session completed."
+  }
+}

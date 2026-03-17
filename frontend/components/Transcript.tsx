@@ -30,8 +30,15 @@ export function Transcript({ entries, accentColor }: TranscriptProps) {
   return (
     <div 
       ref={containerRef}
-      className="flex flex-col gap-6 w-full max-w-2xl mx-auto overflow-y-auto px-4 pb-4 scroll-smooth"
-      style={{ maxHeight: '35vh', scrollbarWidth: 'none' }}
+      className="flex flex-col gap-6 w-full max-w-3xl mx-auto overflow-y-auto px-6 py-6 scroll-smooth rounded-3xl"
+      style={{
+        maxHeight: '35vh',
+        scrollbarWidth: 'none',
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.05)',
+        backdropFilter: 'blur(10px)',
+        WebkitBackdropFilter: 'blur(10px)'
+      }}
     >
       <AnimatePresence initial={false}>
         {entries.map((entry, idx) => {
@@ -40,24 +47,23 @@ export function Transcript({ entries, accentColor }: TranscriptProps) {
           return (
             <motion.div
               key={`${entry.timestamp}-${idx}`}
-              initial={{ opacity: 0, y: 20, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ type: 'spring', stiffness: 300, damping: 25 }}
               className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
             >
-              <motion.div
-                className="max-w-[85%] px-5 py-4 rounded-3xl font-mono text-sm leading-relaxed"
-                animate={{
-                  backgroundColor: isUser ? 'rgba(255,255,255,0.05)' : `${accentColor}1A`,
-                  color: isUser ? '#E2E8F0' : '#F8FAFC',
-                  borderBottomRightRadius: isUser ? '4px' : '24px',
-                  borderBottomLeftRadius: isUser ? '24px' : '4px',
-                  border: `1px solid ${isUser ? 'rgba(255,255,255,0.05)' : `${accentColor}33`}`,
+              <div
+                className={`max-w-[85%] font-mono text-sm leading-relaxed ${
+                  isUser 
+                    ? 'px-5 py-3 rounded-full bg-[rgba(255,255,255,0.06)] text-[#F0F2F5]' 
+                    : 'pl-4 py-1 bg-transparent text-[#F0F2F5]'
+                }`}
+                style={{
+                  borderLeft: isUser ? 'none' : `2px solid ${accentColor}`
                 }}
-                transition={{ duration: 0.4 }}
               >
                 {entry.text}
-              </motion.div>
+              </div>
             </motion.div>
           );
         })}
@@ -65,11 +71,11 @@ export function Transcript({ entries, accentColor }: TranscriptProps) {
       {entries.length === 0 && (
         <motion.div 
           initial={{ opacity: 0 }}
-          animate={{ opacity: 0.3 }}
-          className="m-auto font-mono text-xs tracking-widest text-center uppercase"
-          style={{ color: '#8B92A0' }}
+          animate={{ opacity: 0.4 }}
+          className="m-auto font-mono text-sm tracking-wide text-center"
+          style={{ color: 'var(--text-mono)' }}
         >
-          Start speaking...
+          Start speaking to begin...
         </motion.div>
       )}
     </div>

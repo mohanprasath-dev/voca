@@ -5,7 +5,11 @@ from api.middleware.cors import setup_cors
 from services.persona import get_persona_service
 from services.session import get_session_service
 
-# Setup logging
+
+# Setup loggingfrom dotenv import load_dotenv
+import os
+
+load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voca")
 

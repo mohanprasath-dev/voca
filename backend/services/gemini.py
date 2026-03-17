@@ -16,11 +16,13 @@ class GeminiService:
 
     MAX_HISTORY_TURNS = 6
     _JSON_OBJECT_RE = re.compile(r"\{[\s\S]*\}")
+    _ASSISTANT_REPLY_RE = re.compile(r'"assistant_reply"\s*:\s*"(?P<reply>(?:\\.|[^"\\])*)')
+    _LANGUAGE_RE = re.compile(r'"language"\s*:\s*"(?P<language>(?:\\.|[^"\\])*)')
 
     def __init__(self, timeout_seconds: float = 30.0) -> None:
         self._api_key = settings.gemini_api_key
-        # Keep a fallback chain because free-tier quotas can be model-specific.
-        self._models = ["gemini-3.1-flash-lite", "gemini-1.5-flash"]
+        # Keep a fallback chain because availability/quotas can vary by model.
+        self._models = ["gemini-3.1-pro-preview", "gemini-3.1-flash-lite"]
         self._model = self._models[0]
         self._timeout = timeout_seconds
         self._client = genai.Client(api_key=self._api_key)
@@ -35,35 +37,25 @@ class GeminiService:
         )
 
     def _build_prompt(self, persona: Persona, include_language_tag: bool = False) -> str:
-        assistant_reply_instruction = '"assistant_reply":"string"'
-        if include_language_tag:
-            assistant_reply_instruction = (
-                '"assistant_reply":"string starting with [LANG:xx] followed by the spoken reply"'
-            )
+        tag_instruction = (
+            "You MUST start your `assistant_reply` with the language tag [LANG:xx] "
+            "(e.g., [LANG:es] for Spanish) followed exactly by your human-like verbal response. "
+        ) if include_language_tag else ""
 
         return (
             f"{persona.system_prompt}\n\n"
             "You are VOCA, a real-time AI voice agent acting as a human-like business representative. "
-            "Handle conversations naturally and efficiently, understand informal or multilingual speech, "
-            "and adapt your tone to the active persona context. Keep spoken replies concise and helpful. "
-            "Use 1-2 sentences unless more detail is truly needed. If the user is unclear, ask a short "
-            "follow-up question. If the user switches language, switch instantly and continue in that language. "
-            "Maintain context across the ongoing session.\n\n"
-            "Critical behavior: internally reason with these fields every turn: "
-            '"intent", "details", "sentiment", "next_action". '
-            "Do not expose internal reasoning or JSON to the user; only assistant_reply is spoken to the user.\n\n"
-            "Return strictly valid JSON with this schema: "
-            '{'
-            f'{assistant_reply_instruction},'
-            '"language":"string",'
-            '"escalation_needed":boolean,'
-            '"escalation_summary":"string",'
-            '"intent":"string",'
-            '"details":"string",'
-            '"sentiment":"string",'
-            '"next_action":"string"}. '
-            "If you include a language tag, it must be part of assistant_reply. "
-            "Do not wrap in markdown."
+            "You are an expert at handling conversations naturally and efficiently. You perfectly understand "
+            "informal, heavily accented, or multilingual speech. The user's audio is being transcribed live. "
+            "IMPORTANT REASONING RULES:\n"
+            "1. ADAPT YOUR TONE: Match the user's energy but stay true to the active persona context.\n"
+            "2. CONVERSATIONAL FILLERS: Humans use words like 'Umm', 'uhh', 'hmm', 'well...', 'let's see'. "
+            "You SHOULD use these naturally at the start of sentences if you need to think or act smoothly.\n"
+            "3. NO ROBOTIC SPEECH: Do NOT sound like a typical AI. Avoid perfect grammar if casual is better. "
+            "Do not give bulleted lists—speak everything as a fluid paragraph.\n"
+            "4. MATCH THE LANGUAGE: If the user speaks Spanish, French, Hindi, or any other language, "
+            "SWITCH INSTANTLY. The language tag inside your reply will ensure the TTS engine uses the right voice.\n\n"
+            f"{tag_instruction}"
         )
 
     def _build_contents(self, messages: list[Message]) -> list[dict[str, Any]]:
@@ -94,6 +86,21 @@ class GeminiService:
                         .get("text", ""),
                         "temperature": generation_config.get("temperature"),
                         "maxOutputTokens": generation_config.get("maxOutputTokens"),
+                        "response_mime_type": "application/json",
+                        "response_schema": {
+                            "type": "OBJECT",
+                            "properties": {
+                                "assistant_reply": {"type": "STRING", "description": "The exact words VOCA will speak out loud. Must include language tag if requested."},
+                                "language": {"type": "STRING", "description": "ISO language code, eg 'es' or 'en'"},
+                                "escalation_needed": {"type": "BOOLEAN"},
+                                "escalation_summary": {"type": "STRING"},
+                                "intent": {"type": "STRING"},
+                                "details": {"type": "STRING"},
+                                "sentiment": {"type": "STRING"},
+                                "next_action": {"type": "STRING"}
+                            },
+                            "required": ["assistant_reply", "language", "escalation_needed", "intent"]
+                        }
                     },
                 )
                 return response
@@ -131,6 +138,23 @@ class GeminiService:
         if cleaned.startswith("```"):
             cleaned = cleaned.replace("```json", "").replace("```", "").strip()
 
+        if cleaned.startswith("{") and '"assistant_reply"' in cleaned:
+            extracted_reply_match = self._ASSISTANT_REPLY_RE.search(cleaned)
+            extracted_lang_match = self._LANGUAGE_RE.search(cleaned)
+            extracted_reply = ""
+            extracted_language = ""
+            if extracted_reply_match:
+                extracted_reply = bytes(extracted_reply_match.group("reply"), "utf-8").decode("unicode_escape").strip()
+            if extracted_lang_match:
+                extracted_language = bytes(extracted_lang_match.group("language"), "utf-8").decode("unicode_escape").strip()
+            if extracted_reply:
+                return {
+                    "assistant_reply": extracted_reply,
+                    "language": extracted_language,
+                    "escalation_needed": False,
+                    "escalation_summary": "",
+                }
+
         parsed: dict[str, Any] | None = None
         try:
             candidate = json.loads(cleaned)
@@ -152,8 +176,11 @@ class GeminiService:
         if parsed is None:
             # Fallback: keep the raw model text as the assistant reply so the
             # caller always receives usable output.
+            fallback_reply = cleaned
+            if cleaned.startswith("{") and '"assistant_reply"' in cleaned:
+                fallback_reply = "I heard you, but I need a second. Could you try that once more?"
             return {
-                "assistant_reply": cleaned,
+                "assistant_reply": fallback_reply,
                 "language": "",
                 "escalation_needed": False,
                 "escalation_summary": "",
@@ -179,14 +206,19 @@ class GeminiService:
             },
             "contents": self._build_contents(messages),
             "generationConfig": {
-                "temperature": 0.2,
-                "maxOutputTokens": 120,
+                "temperature": 0.8,
+                "maxOutputTokens": 80,
             },
         }
 
         response_json = await self._request_completion(payload)
         model_text = self._parse_model_text(response_json)
         parsed = self._parse_structured_output(model_text)
+
+        if include_language_tag and parsed.get("assistant_reply") and not str(parsed["assistant_reply"]).lstrip().startswith("[LANG:"):
+            language = str(parsed.get("language") or "").strip()
+            if language:
+                parsed["assistant_reply"] = f"[LANG:{language}] {parsed['assistant_reply']}"
 
         if not parsed["assistant_reply"]:
             parsed["assistant_reply"] = "I heard you, but I need a second. Could you try that once more?"
@@ -205,4 +237,29 @@ class GeminiService:
         messages: list[Message],
     ) -> dict[str, Any]:
         return await self._generate_reply(persona, messages, include_language_tag=True)
+
+
+if __name__ == "__main__":
+    import asyncio
+    from models.persona import VoiceConfig, UIConfig, KnowledgeBase
+    from datetime import datetime, UTC
+
+    async def test():
+        svc = GeminiService()
+        persona = Persona(
+            id="test_persona",
+            name="Test Persona",
+            display_name="Test",
+            organization="Test Org",
+            system_prompt="You are a helpful assistant.",
+            knowledge_base=KnowledgeBase(),
+            ui_config=UIConfig(accent_color="#000", orb_color="#000", label="Test"),
+            voice_config=VoiceConfig(murf_voice_id="en-US-matthew", murf_style="Conversation", language="en-US"),
+            escalation_message="Escalating..."
+        )
+        msgs = [Message(role="user", content="Hello", timestamp=datetime.now(UTC), language_detected="en-US")]
+        res = await svc.generate_reply(persona, msgs)
+        print(f"Response: {res.get('assistant_reply')}, Lang: {res.get('language')}")
+
+    asyncio.run(test())
 
