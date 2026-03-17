@@ -1,7 +1,7 @@
 from starlette.requests import HTTPConnection
 
-from services.persona import PersonaService, get_persona_service
-from services.session import SessionService, get_session_service
+from services.persona import PersonaService
+from services.session import SessionService
 
 
 def get_persona_service_dep(connection: HTTPConnection) -> PersonaService:

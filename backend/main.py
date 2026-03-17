@@ -18,7 +18,7 @@ setup_cors(app)
 # Include routers
 app.include_router(browser.router, prefix="/ws/browser", tags=["Websocket Browser"])
 app.include_router(telephony.router, prefix="/telephony", tags=["Telephony"])
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(dashboard.router, prefix="", tags=["Dashboard"])
 
 
 @app.on_event("startup")
