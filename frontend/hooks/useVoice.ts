@@ -63,7 +63,7 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void, options: Us
       streamRef.current = null;
     }
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close().catch(console.error);
+      audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
     setAudioLevel(0);
@@ -174,7 +174,6 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void, options: Us
       setIsListeningWithRef(true);
       return true;
     } catch (err) {
-      console.error('Failed to start listening', err);
       setError(MIC_ACCESS_REQUIRED_MESSAGE);
       setIsListeningWithRef(false);
       cleanup();

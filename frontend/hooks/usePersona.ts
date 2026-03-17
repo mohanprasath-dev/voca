@@ -67,7 +67,6 @@ export function usePersona(): UsePersonaReturn {
         setActivePersona(defaultPersona);
       }
     } catch (err) {
-      console.error('Failed to fetch personas', err);
       setLoadError('Unable to connect. Please ensure the server is running.');
     } finally {
       setIsLoading(false);

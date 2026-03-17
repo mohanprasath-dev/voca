@@ -114,8 +114,8 @@ class VocaWebSocket {
           if (this.onMessage) {
             this.onMessage(message);
           }
-        } catch (e) {
-          console.error("Failed to parse VocaMessage JSON", e);
+        } catch {
+          // Silently ignore JSON parse errors
         }
       }
     };
@@ -156,8 +156,7 @@ class VocaWebSocket {
       }, this.RECONNECT_DELAY_MS);
     };
 
-    this.ws.onerror = (error) => {
-      console.error("WebSocket Error", error);
+    this.ws.onerror = () => {
       this.onConnectionStatus?.(false);
     };
   }

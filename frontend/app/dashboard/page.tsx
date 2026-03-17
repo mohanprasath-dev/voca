@@ -88,8 +88,7 @@ export default function DashboardPage() {
       setSessions(sessData);
       setStats(statsData);
       setFetchError(null);
-    } catch (err) {
-      console.error('Dashboard fetch error', err);
+    } catch {
       setFetchError('Unable to connect to server.');
     } finally {
       setLoading(false);
