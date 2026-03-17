@@ -52,9 +52,16 @@ class PipelineService:
         )
         session.messages.append(assistant_message)
 
+        voice_config = persona.voice_config.model_dump()
+        voice_config["language"] = (
+            gemini_output.get("language")
+            or language_hint
+            or voice_config.get("language", "en-IN")
+        )
+
         audio_stream: AsyncIterator[bytes] = self._murf.stream(
             text=assistant_message.content,
-            voice_config=persona.voice_config.model_dump(),
+            voice_config=voice_config,
         )
 
         return {

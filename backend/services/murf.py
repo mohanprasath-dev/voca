@@ -16,12 +16,41 @@ class MurfService:
         self._endpoint = "https://api.murf.ai/v1/speech/stream"
         self._timeout = timeout_seconds
 
+    @staticmethod
+    def _normalize_locale(language: str | None) -> str:
+        if not language:
+            return "en-IN"
+
+        normalized = str(language).strip().replace("_", "-")
+        if not normalized:
+            return "en-IN"
+
+        parts = normalized.split("-")
+        if len(parts) == 1:
+            return f"{parts[0].lower()}-IN"
+
+        return f"{parts[0].lower()}-{parts[1].upper()}"
+
+    def _resolve_voice_id(self, voice_config: dict[str, Any], locale: str) -> str | None:
+        language_voice_map = voice_config.get("language_voice_map")
+        if isinstance(language_voice_map, dict):
+            mapped_voice_id = language_voice_map.get(locale)
+            if mapped_voice_id:
+                return str(mapped_voice_id)
+
+        return voice_config.get("murf_voice_id")
+
     def _build_payload(self, text: str, voice_config: dict[str, Any]) -> dict[str, Any]:
+        locale = self._normalize_locale(voice_config.get("language", "en-IN"))
+        voice_id = self._resolve_voice_id(voice_config, locale)
+
         return {
             "text": text,
-            "voiceId": voice_config.get("murf_voice_id"),
+            "voiceId": voice_id,
             "style": voice_config.get("murf_style"),
-            "language": voice_config.get("language", "en-IN"),
+            "language": locale,
+            "locale": locale,
+            "model": "FALCON",
             "format": "PCM",
             "sampleRate": 24000,
         }

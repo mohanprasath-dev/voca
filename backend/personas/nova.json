@@ -15,9 +15,14 @@
     "emergency_keywords": []
   },
   "voice_config": {
-    "murf_voice_id": "en-IN-female-2",
+    "murf_voice_id": "en-UK-juliet",
     "murf_style": "promotional",
-    "language": "en-IN"
+    "language": "en-IN",
+    "language_voice_map": {
+      "en-IN": "en-UK-juliet",
+      "ta-IN": "en-UK-juliet",
+      "hi-IN": "en-UK-juliet"
+    }
   },
   "ui_config": {
     "accent_color": "#F59E0B",
