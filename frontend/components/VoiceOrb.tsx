@@ -61,7 +61,7 @@ export default function VoiceOrb({ state, audioLevel, onClick, color }: VoiceOrb
         onClick={isClickable ? onClick : undefined}
         className="relative flex items-center justify-center rounded-full focus:outline-none z-10"
         animate={{
-          scale: state === 'idle' ? [1, 1.03, 1] : scale,
+          scale: state === 'idle' ? [0.97, 1.03, 0.97] : scale,
           background: `radial-gradient(circle, ${color}33 0%, transparent 60%)`, // 20% opacity center
           borderColor: color,            // Border uses color prop
           boxShadow: `0 0 60px 10px ${color}4D`, // Box shadow glow at 30% opacity

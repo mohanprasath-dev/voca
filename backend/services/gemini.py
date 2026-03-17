@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import httpx
+from google import genai
 
 from config import settings
 from models.persona import Persona
@@ -18,18 +18,24 @@ class GeminiService:
     def __init__(self, timeout_seconds: float = 30.0) -> None:
         self._api_key = settings.gemini_api_key
         self._model = "gemini-2.5-flash"
-        self._endpoint = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self._model}:generateContent"
-        )
         self._timeout = timeout_seconds
+        self._client = genai.Client(api_key=self._api_key)
 
-    def _build_prompt(self, persona: Persona) -> str:
+    def _build_prompt(self, persona: Persona, include_language_tag: bool = False) -> str:
+        assistant_reply_instruction = '"assistant_reply":"string"'
+        if include_language_tag:
+            assistant_reply_instruction = (
+                '"assistant_reply":"string starting with [LANG:xx] followed by the spoken reply"'
+            )
+
         return (
             f"{persona.system_prompt}\n\n"
             "Return strictly valid JSON with this schema: "
-            '{"assistant_reply":"string","language":"string",'
+            '{'
+            f'{assistant_reply_instruction},'
+            '"language":"string",'
             '"escalation_needed":boolean,"escalation_summary":"string"}. '
+            "If you include a language tag, it must be part of assistant_reply. "
             "Do not wrap in markdown."
         )
 
@@ -47,13 +53,25 @@ class GeminiService:
         return contents
 
     async def _request_completion(self, payload: dict[str, Any]) -> dict[str, Any]:
-        params = {"key": self._api_key}
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(self._endpoint, params=params, json=payload)
-            response.raise_for_status()
-            return response.json()
+        generation_config = payload.get("generationConfig", {})
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=payload.get("contents", []),
+            config={
+                "systemInstruction": payload.get("system_instruction", {})
+                .get("parts", [{}])[0]
+                .get("text", ""),
+                "temperature": generation_config.get("temperature"),
+                "maxOutputTokens": generation_config.get("maxOutputTokens"),
+            },
+        )
+        return response
 
-    def _parse_model_text(self, response_json: dict[str, Any]) -> str:
+    def _parse_model_text(self, response_json: dict[str, Any] | Any) -> str:
+        response_text = getattr(response_json, "text", None)
+        if response_text:
+            return str(response_text).strip()
+
         candidates = response_json.get("candidates", [])
         if not candidates:
             raise ValueError("Gemini returned no candidates")
@@ -81,14 +99,16 @@ class GeminiService:
             "escalation_summary": str(parsed.get("escalation_summary", "")).strip(),
         }
 
-    async def generate_reply(
+    async def _generate_reply(
         self,
         persona: Persona,
         messages: list[Message],
+        *,
+        include_language_tag: bool = False,
     ) -> dict[str, Any]:
         payload = {
             "system_instruction": {
-                "parts": [{"text": self._build_prompt(persona)}],
+                "parts": [{"text": self._build_prompt(persona, include_language_tag=include_language_tag)}],
             },
             "contents": self._build_contents(messages),
             "generationConfig": {
@@ -104,3 +124,18 @@ class GeminiService:
         if not parsed["assistant_reply"]:
             raise ValueError("Gemini returned empty assistant reply")
         return parsed
+
+    async def generate_reply(
+        self,
+        persona: Persona,
+        messages: list[Message],
+    ) -> dict[str, Any]:
+        return await self._generate_reply(persona, messages, include_language_tag=False)
+
+    async def generate_livekit_reply(
+        self,
+        persona: Persona,
+        messages: list[Message],
+    ) -> dict[str, Any]:
+        return await self._generate_reply(persona, messages, include_language_tag=True)
+

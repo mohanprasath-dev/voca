@@ -1,9 +1,15 @@
-﻿'use client';
+'use client';
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { usePersona } from '../../hooks/usePersona';
-import { useVoice } from '../../hooks/useVoice';
-import { vocaWS, VocaMessage } from '../../lib/websocket';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ParticipantKind,
+  RemoteParticipant,
+  RemoteTrack,
+  RemoteTrackPublication,
+  Room,
+  RoomEvent,
+  Track,
+} from 'livekit-client';
 import VoiceOrb, { OrbState } from '../../components/VoiceOrb';
 import { PersonaSwitcher } from '../../components/PersonaSwitcher';
 import { Transcript, TranscriptEntry } from '../../components/Transcript';
@@ -11,43 +17,52 @@ import LanguageBadge from '../../components/LanguageBadge';
 import { StatusBar } from '../../components/StatusBar';
 import SummaryPanel, { SessionSummaryView } from '../../components/SummaryPanel';
 import { motion, AnimatePresence } from 'framer-motion';
+import { usePersona, Persona } from '../../hooks/usePersona';
 
 const NOTICE_AUTO_HIDE_MS = 2500;
-const AUDIO_WAIT_NOTICE_MS = 20000;
-const AUDIO_WAIT_TIMEOUT_MS = 30000;
-const AUDIO_STREAM_SAMPLE_RATE = 24000;
-const AUDIO_STREAM_IDLE_MS = 350;
+const API_BASE = 'http://localhost:8000';
+
+interface LiveKitTokenResponse {
+  token: string;
+  url: string;
+  persona_id: string;
+  session_id: string;
+  room_name: string;
+  participant_name: string;
+}
+
+interface LiveKitSummaryResponse {
+  session_id: string;
+  summary: string;
+  duration_seconds: number;
+  turn_count: number;
+  languages_used: string[];
+  persona_id: string;
+}
 
 export default function VocaPage() {
   const { personas, activePersona, setActivePersona, isLoading, loadError, retryLoad } = usePersona();
-  const activePersonaId = activePersona?.id;
-  
+
   const [orbState, setOrbState] = useState<OrbState>('idle');
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [currentLanguage, setCurrentLanguage] = useState<string>('en');
   const [languageChanged, setLanguageChanged] = useState<boolean>(false);
   const [hasLanguageDetection, setHasLanguageDetection] = useState<boolean>(false);
-  const [escalation, setEscalation] = useState<string | null>(null);
+  const [escalation] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingPersonaId, setPendingPersonaId] = useState<string | null>(null);
   const [sessionSummary, setSessionSummary] = useState<SessionSummaryView | null>(null);
   const [sessionStartMs, setSessionStartMs] = useState<number | null>(null);
-  
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [latencyMs, setLatencyMs] = useState<number>(0);
+  const [latencyMs] = useState<number>(0);
+  const [hasAttemptedSession, setHasAttemptedSession] = useState<boolean>(false);
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const playbackProcessorRef = useRef<ScriptProcessorNode | null>(null);
-  const pcmQueueRef = useRef<Int16Array[]>([]);
-  const activePcmChunkRef = useRef<Int16Array | null>(null);
-  const activePcmOffsetRef = useRef<number>(0);
-  const playbackLastChunkTsRef = useRef<number>(0);
-  const playbackActiveRef = useRef<boolean>(false);
-  const audioWaitTimeoutRef = useRef<number | null>(null);
-  const audioWaitNoticeTimeoutRef = useRef<number | null>(null);
   const activePersonaRef = useRef(activePersona);
   const transcriptEntriesRef = useRef<TranscriptEntry[]>([]);
   const sessionStartMsRef = useRef<number | null>(null);
+  const roomRef = useRef<Room | null>(null);
+  const audioElementsRef = useRef<HTMLAudioElement[]>([]);
 
   useEffect(() => {
     activePersonaRef.current = activePersona;
@@ -61,123 +76,72 @@ export default function VocaPage() {
     sessionStartMsRef.current = sessionStartMs;
   }, [sessionStartMs]);
 
-  const handleAudioChunk = useCallback((chunk: ArrayBuffer) => {
-    vocaWS.sendAudio(chunk);
+  const resetConversation = useCallback(() => {
+    setTranscriptEntries([]);
+    setNotice(null);
+    setCurrentLanguage('en');
+    setHasLanguageDetection(false);
+    setLanguageChanged(false);
+    setSessionSummary(null);
+    setSessionStartMs(null);
+    setCurrentSessionId(null);
+    transcriptEntriesRef.current = [];
+    sessionStartMsRef.current = null;
+    setOrbState('idle');
   }, []);
 
-  const clearAudioWaitTimeout = useCallback(() => {
-    if (audioWaitTimeoutRef.current !== null) {
-      window.clearTimeout(audioWaitTimeoutRef.current);
-      audioWaitTimeoutRef.current = null;
-    }
-
-    if (audioWaitNoticeTimeoutRef.current !== null) {
-      window.clearTimeout(audioWaitNoticeTimeoutRef.current);
-      audioWaitNoticeTimeoutRef.current = null;
-    }
+  useEffect(() => {
+    return () => {
+      const room = roomRef.current;
+      roomRef.current = null;
+      if (room) {
+        void room.disconnect();
+      }
+      for (const element of audioElementsRef.current) {
+        element.remove();
+      }
+      audioElementsRef.current = [];
+    };
   }, []);
-
-  const clearPlaybackFallbackTimeout = useCallback(() => {
-    // Kept for compatibility with existing cleanup call sites.
-  }, []);
-
-  const ensurePlaybackChain = useCallback(async () => {
-    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-      audioContextRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({
-        sampleRate: AUDIO_STREAM_SAMPLE_RATE,
-      });
-    }
-
-    if (audioContextRef.current.state === 'suspended') {
-      await audioContextRef.current.resume();
-    }
-
-    if (!playbackProcessorRef.current) {
-      const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = (event) => {
-        const output = event.outputBuffer.getChannelData(0);
-        let outIdx = 0;
-
-        while (outIdx < output.length) {
-          if (!activePcmChunkRef.current || activePcmOffsetRef.current >= activePcmChunkRef.current.length) {
-            activePcmChunkRef.current = pcmQueueRef.current.shift() ?? null;
-            activePcmOffsetRef.current = 0;
-            if (!activePcmChunkRef.current) {
-              break;
-            }
-          }
-
-          const chunk = activePcmChunkRef.current;
-          const remainingChunk = chunk.length - activePcmOffsetRef.current;
-          const remainingOut = output.length - outIdx;
-          const copyCount = Math.min(remainingChunk, remainingOut);
-
-          for (let i = 0; i < copyCount; i++) {
-            output[outIdx + i] = chunk[activePcmOffsetRef.current + i] / 32768;
-          }
-
-          outIdx += copyCount;
-          activePcmOffsetRef.current += copyCount;
-
-          if (activePcmOffsetRef.current >= chunk.length) {
-            activePcmChunkRef.current = null;
-            activePcmOffsetRef.current = 0;
-          }
-        }
-
-        while (outIdx < output.length) {
-          output[outIdx] = 0;
-          outIdx += 1;
-        }
-
-        const queueEmpty = pcmQueueRef.current.length === 0 && activePcmChunkRef.current === null;
-        const idleForMs = Date.now() - playbackLastChunkTsRef.current;
-        if (queueEmpty && playbackActiveRef.current && idleForMs > AUDIO_STREAM_IDLE_MS) {
-          playbackActiveRef.current = false;
-          setOrbState('idle');
-        }
-      };
-
-      processor.connect(audioContextRef.current.destination);
-      playbackProcessorRef.current = processor;
-    }
-  }, []);
-
-  const startAudioWaitTimeout = useCallback(() => {
-    clearAudioWaitTimeout();
-
-    audioWaitNoticeTimeoutRef.current = window.setTimeout(() => {
-      setNotice('Taking longer than expected...');
-    }, AUDIO_WAIT_NOTICE_MS);
-
-    audioWaitTimeoutRef.current = window.setTimeout(() => {
-      setOrbState('idle');
-      setNotice('Taking longer than expected...');
-    }, AUDIO_WAIT_TIMEOUT_MS);
-  }, [clearAudioWaitTimeout]);
-
-  const handleSpeechEnd = useCallback(() => {
-    setOrbState('processing');
-    startAudioWaitTimeout();
-  }, [startAudioWaitTimeout]);
-
-  const { startListening, stopListening, audioLevel, error } = useVoice(handleAudioChunk, {
-    onSpeechEnd: handleSpeechEnd,
-  });
 
   const markSessionStarted = useCallback(() => {
-    if (sessionStartMsRef.current) return;
+    if (sessionStartMsRef.current) {
+      return;
+    }
+
     const now = Date.now();
     sessionStartMsRef.current = now;
     setSessionStartMs(now);
   }, []);
 
+  const updateLanguageState = useCallback((language: string) => {
+    const normalized = language || 'en';
+    setHasLanguageDetection(true);
+    setCurrentLanguage((previousLanguage) => {
+      if (previousLanguage !== normalized) {
+        setLanguageChanged(true);
+        window.setTimeout(() => setLanguageChanged(false), 2000);
+      }
+      return normalized;
+    });
+  }, []);
+
+  const appendTranscriptEntry = useCallback((entry: TranscriptEntry) => {
+    markSessionStarted();
+    setTranscriptEntries((previousEntries) => {
+      const nextEntries = [...previousEntries, entry];
+      transcriptEntriesRef.current = nextEntries;
+      return nextEntries;
+    });
+    updateLanguageState(entry.language);
+  }, [markSessionStarted, updateLanguageState]);
+
   const buildFallbackSummary = useCallback((summaryText?: string): SessionSummaryView => {
     const entries = transcriptEntriesRef.current;
-    const userTurns = entries.filter(entry => entry.role === 'user').length;
-    const vocaTurns = entries.filter(entry => entry.role === 'voca').length;
+    const userTurns = entries.filter((entry) => entry.role === 'user').length;
+    const vocaTurns = entries.filter((entry) => entry.role === 'voca').length;
     const turnCount = Math.min(userTurns, vocaTurns);
-    const languages = Array.from(new Set(entries.map(entry => entry.language)));
+    const languages = Array.from(new Set(entries.map((entry) => entry.language)));
     const durationSeconds = sessionStartMsRef.current
       ? Math.max(1, Math.round((Date.now() - sessionStartMsRef.current) / 1000))
       : 0;
@@ -192,159 +156,232 @@ export default function VocaPage() {
     };
   }, []);
 
-  const resetConversation = useCallback(() => {
-    setTranscriptEntries([]);
-    setEscalation(null);
-    setNotice(null);
-    setCurrentLanguage('en');
-    setHasLanguageDetection(false);
-    setLanguageChanged(false);
-    setLatencyMs(0);
-    setSessionSummary(null);
-    setSessionStartMs(null);
-    sessionStartMsRef.current = null;
-    transcriptEntriesRef.current = [];
-    setOrbState('idle');
-  }, []);
-
   useEffect(() => {
-    if (!error) return;
-
-    setOrbState('idle');
-    setNotice(error);
+    if (!notice) {
+      return undefined;
+    }
 
     const timer = window.setTimeout(() => {
       setNotice(null);
     }, NOTICE_AUTO_HIDE_MS);
 
     return () => window.clearTimeout(timer);
-  }, [error]);
+  }, [notice]);
 
-  useEffect(() => {
-    if (!activePersonaId) return;
-
-    let stillMounted = true;
-    setIsConnected(vocaWS.isConnected);
-
-    vocaWS.connect(
-      activePersonaId,
-      (message: VocaMessage) => {
-        if (message.type === 'persona_loaded') {
-          if (stillMounted) {
-            setIsConnected(true);
-            setPendingPersonaId(null);
-          }
-        } else if (message.type === 'transcript') {
-          const text = message.text as string;
-          const lang = message.language as string;
-          markSessionStarted();
-          setTranscriptEntries(prev => {
-            const next: TranscriptEntry[] = [...prev, { role: 'user', text, language: lang, timestamp: Date.now() }];
-            transcriptEntriesRef.current = next;
-            return next;
-          });
-          setHasLanguageDetection(true);
-          setCurrentLanguage(lang);
-        } else if (message.type === 'language_changed') {
-          const to = message.to as string;
-          setHasLanguageDetection(true);
-          setCurrentLanguage(to);
-          setLanguageChanged(true);
-          setTimeout(() => setLanguageChanged(false), 2000);
-        } else if (message.type === 'response') {
-          const text = message.text as string;
-          const lang = message.language as string;
-          markSessionStarted();
-          setTranscriptEntries(prev => {
-            const next: TranscriptEntry[] = [...prev, { role: 'voca', text, language: lang, timestamp: Date.now() }];
-            transcriptEntriesRef.current = next;
-            return next;
-          });
-          setHasLanguageDetection(true);
-        } else if (message.type === 'pong') {
-          setLatencyMs(vocaWS.latencyMs);
-        } else if (message.type === 'escalation') {
-           setEscalation(message.message as string);
-        } else if (message.type === 'session_summary') {
-          const summaryText = (message.summary as string) || '';
-          const fallback = buildFallbackSummary(summaryText);
-          const durationSeconds = typeof message.duration_seconds === 'number'
-            ? message.duration_seconds
-            : fallback.durationSeconds;
-          const turnCount = typeof message.turn_count === 'number'
-            ? message.turn_count
-            : fallback.turnCount;
-          const languagesUsed = Array.isArray(message.languages_used)
-            ? (message.languages_used as string[])
-            : fallback.languagesUsed;
-          const persona = activePersonaRef.current;
-
-          setSessionSummary({
-            personaName: persona?.display_name || persona?.name || 'Unknown',
-            durationSeconds,
-            turnCount,
-            languagesUsed,
-            summaryText: summaryText || fallback.summaryText,
-          });
-        } else if (message.type === 'error') {
-          const messageText = (message.message as string) || 'Something went wrong, please try again.';
-          setNotice(messageText);
-          setOrbState('idle');
-        }
-      },
-      (chunk: ArrayBuffer) => {
-        clearAudioWaitTimeout();
-        playbackLastChunkTsRef.current = Date.now();
-        playbackActiveRef.current = true;
-        pcmQueueRef.current.push(new Int16Array(chunk.slice(0)));
-        setOrbState('speaking');
-        void ensurePlaybackChain();
-      },
-      (connected: boolean) => {
-        if (stillMounted) {
-          setIsConnected(connected);
-        }
-      },
-    );
-
-    return () => {
-      stillMounted = false;
-      clearAudioWaitTimeout();
-      clearPlaybackFallbackTimeout();
-      if (playbackProcessorRef.current) {
-        playbackProcessorRef.current.disconnect();
-        playbackProcessorRef.current = null;
-      }
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        void audioContextRef.current.close();
-      }
-      audioContextRef.current = null;
-      pcmQueueRef.current = [];
-      activePcmChunkRef.current = null;
-      activePcmOffsetRef.current = 0;
-      playbackActiveRef.current = false;
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePersonaId]);
-
-  const handleOrbClick = async () => {
-    if (orbState === 'idle') {
-      const started = await startListening();
-      setOrbState(started ? 'listening' : 'idle');
-    } else if (orbState === 'listening') {
-      stopListening();
+  const disconnectRoom = useCallback(async () => {
+    const room = roomRef.current;
+    roomRef.current = null;
+    if (room) {
+      room.removeAllListeners();
+      await room.disconnect();
     }
-  };
+    for (const element of audioElementsRef.current) {
+      element.remove();
+    }
+    audioElementsRef.current = [];
+    setIsConnected(false);
+  }, []);
 
-  const handlePersonaSwitch = (persona: import('../../hooks/usePersona').Persona) => {
-    if (orbState !== 'idle') return;
-    if (activePersona?.id === persona.id) return;
+  const appendAgentAudio = useCallback((track: RemoteTrack, participant: RemoteParticipant) => {
+    if (track.kind !== Track.Kind.Audio || participant.kind !== ParticipantKind.AGENT) {
+      return;
+    }
 
-    setPendingPersonaId(persona.id);
+    const audioElement = track.attach();
+    audioElement.autoplay = true;
+    document.body.appendChild(audioElement);
+    audioElementsRef.current.push(audioElement);
+    setOrbState('speaking');
+    void audioElement.play().catch(() => {
+      setNotice('Audio playback is blocked. Click the orb again.');
+    });
+  }, []);
+
+  const connectSession = useCallback(async () => {
+    if (!activePersona?.id) {
+      return null;
+    }
+
+    await disconnectRoom();
+    setHasAttemptedSession(true);
+    setNotice(null);
+    setSessionSummary(null);
+    setOrbState('processing');
+
+    const response = await fetch(`${API_BASE}/livekit/token?persona_id=${activePersona.id}`);
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    const data = (await response.json()) as LiveKitTokenResponse;
+    setCurrentSessionId(data.session_id);
+
+    const room = new Room();
+    roomRef.current = room;
+
+    room.on(RoomEvent.Connected, () => {
+      setIsConnected(true);
+      setPendingPersonaId(null);
+    });
+
+    room.on(RoomEvent.Disconnected, () => {
+      setIsConnected(false);
+      setOrbState('idle');
+    });
+
+    room.on(RoomEvent.DataReceived, (payload) => {
+      try {
+        const event = JSON.parse(new TextDecoder().decode(payload)) as {
+          type?: string;
+          text?: string;
+          language?: string;
+          to?: string;
+        };
+
+        if (event.type === 'transcript' && event.text) {
+          appendTranscriptEntry({
+            role: 'user',
+            text: event.text,
+            language: event.language || 'en',
+            timestamp: Date.now(),
+          });
+          setOrbState('processing');
+          return;
+        }
+
+        if (event.type === 'response' && event.text) {
+          appendTranscriptEntry({
+            role: 'voca',
+            text: event.text,
+            language: event.language || currentLanguage,
+            timestamp: Date.now(),
+          });
+          setOrbState('speaking');
+          return;
+        }
+
+        if (event.type === 'language_changed' && event.to) {
+          updateLanguageState(event.to);
+        }
+      } catch {
+        // Ignore malformed data packets.
+      }
+    });
+
+    room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _publication: RemoteTrackPublication, participant: RemoteParticipant) => {
+      appendAgentAudio(track, participant);
+    });
+
+    room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+      const agentSpeaking = speakers.some((speaker) => speaker.kind === ParticipantKind.AGENT);
+      if (agentSpeaking) {
+        setOrbState('speaking');
+        return;
+      }
+
+      if (room.localParticipant.isMicrophoneEnabled) {
+        setOrbState('listening');
+        return;
+      }
+
+      if (room.state === 'connected') {
+        setOrbState('idle');
+      }
+    });
+
+    await room.connect(data.url, data.token);
+    await room.startAudio();
+    return room;
+  }, [activePersona?.id, appendAgentAudio, appendTranscriptEntry, currentLanguage, disconnectRoom, updateLanguageState]);
+
+  const handleOrbClick = useCallback(() => {
+    if (!activePersona) {
+      return;
+    }
+
+    if (orbState === 'processing' || orbState === 'speaking') {
+      return;
+    }
+
+    if (orbState === 'idle') {
+      void connectSession()
+        .then(async (room) => {
+          if (!room) {
+            return;
+          }
+          await room.localParticipant.setMicrophoneEnabled(true);
+          setOrbState('listening');
+        })
+        .catch(() => {
+          setNotice('Microphone access required');
+          setOrbState('idle');
+          setPendingPersonaId(null);
+        });
+      return;
+    }
+
+    if (orbState === 'listening' && roomRef.current?.state === 'connected') {
+      void roomRef.current.localParticipant.setMicrophoneEnabled(false);
+      setOrbState('processing');
+    }
+  }, [activePersona, connectSession, orbState]);
+
+  const handleEndSession = useCallback(async () => {
+    if (!currentSessionId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/livekit/session/end?session_id=${currentSessionId}`, {
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to end session');
+      }
+
+      const data = (await response.json()) as LiveKitSummaryResponse;
+      const fallback = buildFallbackSummary(data.summary);
+      setSessionSummary({
+        personaName: activePersona?.display_name || activePersona?.name || fallback.personaName,
+        durationSeconds: data.duration_seconds || fallback.durationSeconds,
+        turnCount: data.turn_count || fallback.turnCount,
+        languagesUsed: data.languages_used.length > 0 ? data.languages_used : fallback.languagesUsed,
+        summaryText: data.summary || fallback.summaryText,
+      });
+      await roomRef.current?.localParticipant.setMicrophoneEnabled(false);
+      await disconnectRoom();
+      setCurrentSessionId(null);
+      setOrbState('idle');
+    } catch {
+      setNotice('Unable to end session.');
+    }
+  }, [activePersona, buildFallbackSummary, currentSessionId, disconnectRoom]);
+
+  const handleNewConversation = useCallback(async () => {
+    await disconnectRoom();
+    setHasAttemptedSession(false);
     resetConversation();
+  }, [disconnectRoom, resetConversation]);
 
+  const handlePersonaSwitch = useCallback(async (persona: Persona) => {
+    if (orbState !== 'idle') {
+      return;
+    }
+    if (activePersona?.id === persona.id) {
+      return;
+    }
+
+    const shouldReconnect = roomRef.current?.state === 'connected';
+    setPendingPersonaId(shouldReconnect ? persona.id : null);
+
+    if (shouldReconnect) {
+      await disconnectRoom();
+    }
+
+    resetConversation();
     setActivePersona(persona);
-  };
+    setPendingPersonaId(null);
+  }, [activePersona?.id, disconnectRoom, orbState, resetConversation, setActivePersona]);
 
   if (isLoading || loadError) {
     return (
@@ -390,117 +427,126 @@ export default function VocaPage() {
   }
 
   const currentAccent = activePersona?.ui_config.accent_color || '#00C2B8';
-  const hasCompletedExchange = transcriptEntries.some(entry => entry.role === 'user')
-    && transcriptEntries.some(entry => entry.role === 'voca');
-
+  const hasCompletedExchange = transcriptEntries.some((entry) => entry.role === 'user')
+    && transcriptEntries.some((entry) => entry.role === 'voca');
   return (
-    <motion.main 
+    <motion.main
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="min-h-screen flex flex-col font-sans overflow-hidden"
       style={{ backgroundColor: '#080A0F' }}
       transition={{ duration: 0.4 }}
     >
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: `radial-gradient(circle at 50% 50%, ${currentAccent}08 0%, transparent 60%)`,
-        transition: 'background 0.4s ease-in-out'
-      }} />
-
-      <div className="w-full flex items-center justify-between p-6 z-10">
-        <div className="flex-1" />
-        <div className="flex-1 flex justify-center">
-          <PersonaSwitcher 
-            personas={personas} 
-            activePersona={activePersona} 
-            onSwitch={handlePersonaSwitch} 
-            disabled={orbState !== 'idle'} 
-            pendingPersonaId={pendingPersonaId}
-          />
-        </div>
-        <div className="flex-1 flex justify-end">
-          {hasLanguageDetection && (
-            <LanguageBadge 
-              language={currentLanguage} 
-              changed={languageChanged} 
-              accentColor={currentAccent}
-            />
-          )}
-        </div>
-      </div>
-
-      {!isConnected && (
-        <div className="px-6 z-10">
-          <div className="mx-auto max-w-2xl rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-2 text-center text-xs font-mono text-red-300">
-            Server disconnected.
-            <button
-              onClick={() => window.location.reload()}
-              className="ml-2 underline underline-offset-2 hover:text-white"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 flex flex-col items-center justify-center gap-16 pb-24 px-4 z-10">
-        <AnimatePresence>
-          {escalation && (
-            <motion.div 
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="bg-red-500/10 border border-red-500/20 text-red-400 px-6 py-3 rounded-2xl text-xs font-mono max-w-xl text-center backdrop-blur-md"
-            >
-              {escalation}
-            </motion.div>
-          )}
-
-          {notice && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="bg-red-500/10 border border-red-500/25 text-red-300 px-5 py-2 rounded-xl text-xs font-mono text-center backdrop-blur-md"
-            >
-              {notice}
-            </motion.div>
-          )}
-        </AnimatePresence>
-        
-        <VoiceOrb 
-          state={orbState} 
-          audioLevel={audioLevel} 
-          onClick={handleOrbClick} 
-          color={activePersona?.ui_config.orb_color || '#00C2B8'} 
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `radial-gradient(circle at 50% 50%, ${currentAccent}08 0%, transparent 60%)`,
+            transition: 'background 0.4s ease-in-out',
+          }}
         />
 
-        {orbState === 'idle' && hasCompletedExchange && !sessionSummary && (
-          <button
-            onClick={() => vocaWS.sendEndSession()}
-            className="px-4 py-2 rounded-lg border border-white/15 text-white/90 text-xs font-mono uppercase tracking-wider hover:bg-white/5 transition-colors"
-          >
-            End Session
-          </button>
+        <div className="w-full flex items-center justify-between p-6 z-10">
+          <div className="flex-1" />
+          <div className="flex-1 flex justify-center">
+            <PersonaSwitcher
+              personas={personas}
+              activePersona={activePersona}
+              onSwitch={(persona) => {
+                void handlePersonaSwitch(persona);
+              }}
+              disabled={orbState !== 'idle'}
+              pendingPersonaId={pendingPersonaId}
+            />
+          </div>
+          <div className="flex-1 flex justify-end">
+            {hasLanguageDetection && (
+              <LanguageBadge
+                language={currentLanguage}
+                changed={languageChanged}
+                accentColor={currentAccent}
+              />
+            )}
+          </div>
+        </div>
+
+        {hasAttemptedSession && !isConnected && (
+          <div className="px-6 z-10">
+            <div className="mx-auto max-w-2xl rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-2 text-center text-xs font-mono text-red-300">
+              Server disconnected.
+              <button
+                onClick={() => {
+                  void handleOrbClick();
+                }}
+                className="ml-2 underline underline-offset-2 hover:text-white"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
         )}
 
-        <div className="w-full max-w-3xl flex-1 flex flex-col justify-end">
-          <AnimatePresence mode="wait">
-            {sessionSummary ? (
-              <SummaryPanel summary={sessionSummary} onNewConversation={resetConversation} />
-            ) : (
-              <Transcript entries={transcriptEntries} accentColor={currentAccent} />
+        <div className="flex-1 flex flex-col items-center justify-center gap-16 pb-24 px-4 z-10">
+          <AnimatePresence>
+            {escalation && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="bg-red-500/10 border border-red-500/20 text-red-400 px-6 py-3 rounded-2xl text-xs font-mono max-w-xl text-center backdrop-blur-md"
+              >
+                {escalation}
+              </motion.div>
+            )}
+
+            {notice && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="bg-red-500/10 border border-red-500/25 text-red-300 px-5 py-2 rounded-xl text-xs font-mono text-center backdrop-blur-md"
+              >
+                {notice}
+              </motion.div>
             )}
           </AnimatePresence>
-        </div>
-      </div>
 
-      <StatusBar 
-        connected={isConnected} 
-        latencyMs={latencyMs} 
-        personaLabel={activePersona?.ui_config.label || ''} 
-        accentColor={currentAccent}
-      />
+          <VoiceOrb
+            state={orbState}
+            audioLevel={0}
+            onClick={handleOrbClick}
+            color={activePersona?.ui_config.orb_color || '#00C2B8'}
+          />
+
+          {orbState === 'idle' && hasCompletedExchange && !sessionSummary && (
+            <button
+              onClick={() => {
+                void handleEndSession();
+              }}
+              className="px-4 py-2 rounded-lg border border-white/15 text-white/90 text-xs font-mono uppercase tracking-wider hover:bg-white/5 transition-colors"
+            >
+              End Session
+            </button>
+          )}
+
+          <div className="w-full max-w-3xl flex-1 flex flex-col justify-end">
+            <AnimatePresence mode="wait">
+              {sessionSummary ? (
+                <SummaryPanel summary={sessionSummary} onNewConversation={() => {
+                  void handleNewConversation();
+                }} />
+              ) : (
+                <Transcript entries={transcriptEntries} accentColor={currentAccent} />
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <StatusBar
+          connected={isConnected}
+          latencyMs={latencyMs}
+          personaLabel={activePersona?.ui_config.label || ''}
+          accentColor={currentAccent}
+        />
     </motion.main>
   );
 }
-

@@ -1,6 +1,6 @@
 import logging
 from fastapi import FastAPI
-from api.routes import browser, telephony, dashboard
+from api.routes import browser, dashboard, livekit
 from api.middleware.cors import setup_cors
 from services.persona import get_persona_service
 from services.session import get_session_service
@@ -17,8 +17,8 @@ setup_cors(app)
 
 # Include routers
 app.include_router(browser.router, prefix="/ws/browser", tags=["Websocket Browser"])
-app.include_router(telephony.router, prefix="/telephony", tags=["Telephony"])
-app.include_router(dashboard.router, prefix="", tags=["Dashboard"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(livekit.router, tags=["LiveKit"])
 
 
 @app.on_event("startup")

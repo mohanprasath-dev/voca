@@ -60,7 +60,7 @@ export default function LandingScreen() {
             transition={{ duration: 0.55, delay: 0.1 }}
             className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-[#A8B5C8] md:text-base"
           >
-            Real-time conversational voice agents for every phone number and browser session.
+            Real-time conversational voice agents for fast browser-based demos.
           </motion.p>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -115,7 +115,7 @@ export default function LandingScreen() {
         </section>
 
         <footer className="mt-auto pt-8 text-center text-xs font-mono uppercase tracking-[0.2em] text-[#6E7687]">
-          Twilio gave every app a phone number. Voca gives every phone number a brain.
+          Browser-first voice AI for live demos.
         </footer>
       </div>
     </motion.main>

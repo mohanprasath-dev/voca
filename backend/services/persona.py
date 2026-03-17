@@ -3,11 +3,13 @@ from __future__ import annotations
 import glob
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from models.persona import Persona
 
 logger = logging.getLogger("voca")
+PERSONAS_DIR = Path(__file__).resolve().parents[1] / "personas"
 
 
 class PersonaService:
@@ -19,7 +21,7 @@ class PersonaService:
 
     def load_all(self) -> None:
         self._personas.clear()
-        for path in glob.glob("personas/*.json"):
+        for path in glob.glob(str(PERSONAS_DIR / "*.json")):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 persona = Persona(**data)

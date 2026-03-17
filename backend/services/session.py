@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -32,29 +33,69 @@ class SessionService:
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
         self._summaries_text: dict[str, str] = {}
+        self._store_path = Path(__file__).resolve().parents[1] / "data" / "sessions.json"
         self._api_key = settings.gemini_api_key
         self._model = "gemini-2.5-flash"
         self._endpoint = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self._model}:generateContent"
         )
+        self._load_from_disk()
+
+    def _load_from_disk(self) -> None:
+        if not self._store_path.exists():
+            self._sessions = {}
+            self._summaries_text = {}
+            return
+
+        payload = json.loads(self._store_path.read_text(encoding="utf-8"))
+        sessions_payload = payload.get("sessions", {})
+        summaries_payload = payload.get("summaries_text", {})
+
+        self._sessions = {
+            session_id: Session.model_validate(session_data)
+            for session_id, session_data in sessions_payload.items()
+        }
+        self._summaries_text = {
+            str(session_id): str(summary)
+            for session_id, summary in summaries_payload.items()
+        }
+
+    def _save_to_disk(self) -> None:
+        self._store_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "sessions": {
+                session_id: session.model_dump(mode="json")
+                for session_id, session in self._sessions.items()
+            },
+            "summaries_text": self._summaries_text,
+        }
+        tmp_path = self._store_path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+        tmp_path.replace(self._store_path)
 
     def create_session(self, persona_id: str) -> Session:
+        self._load_from_disk()
         session_id = str(uuid.uuid4())[:8]
         session = Session(session_id=session_id, persona_id=persona_id)
         self._sessions[session_id] = session
+        self._save_to_disk()
         logger.info("Session created: %s for persona %s", session_id, persona_id)
         return session
 
     def get_session(self, session_id: str) -> Session | None:
+        self._load_from_disk()
         return self._sessions.get(session_id)
 
     def add_message(self, session_id: str, message: Message) -> None:
+        self._load_from_disk()
         session = self._sessions.get(session_id)
         if session:
             session.messages.append(message)
+            self._save_to_disk()
 
     async def end_session(self, session_id: str) -> dict[str, Any]:
+        self._load_from_disk()
         session = self._sessions.get(session_id)
         if not session:
             return {"summary": "Session not found."}
@@ -81,6 +122,7 @@ class SessionService:
             session.summary = structured_summary
 
         self._summaries_text[session_id] = summary_text
+        self._save_to_disk()
 
         return {
             "session_id": session_id,
@@ -92,6 +134,7 @@ class SessionService:
         }
 
     def list_sessions(self) -> list[dict[str, Any]]:
+        self._load_from_disk()
         results: list[dict[str, Any]] = []
         for sid, session in self._sessions.items():
             ended_at = datetime.now(UTC)
@@ -128,6 +171,7 @@ class SessionService:
         return results
 
     def get_stats(self) -> dict[str, Any]:
+        self._load_from_disk()
         total = len(self._sessions)
         resolved = 0
         escalated = 0

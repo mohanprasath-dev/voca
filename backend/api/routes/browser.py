@@ -76,11 +76,6 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
         if not audio_buffer:
             return
 
-        # Send a tiny priming PCM chunk immediately so playback can start while
-        # STT/LLM/TTS processing continues.
-        if not await safe_send_bytes(b"\x00" * 4096):
-            return
-
         audio_bytes = b"".join(audio_buffer)
         audio_buffer = []
 
@@ -88,7 +83,7 @@ async def browser_ws(websocket: WebSocket, persona_id: str) -> None:
             transcript_text, detected_language = await deepgram_svc.transcribe_bytes(audio_bytes)
         except Exception as exc:
             logger.error("Deepgram transcription error: %s", exc)
-            await websocket.send_json({"type": "error", "message": "Speech recognition failed. Please try again."})
+            await safe_send_json({"type": "error", "message": "Speech recognition failed. Please try again."})
             return
 
         transcript_text = str(transcript_text).strip()

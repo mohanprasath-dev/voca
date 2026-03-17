@@ -20,7 +20,7 @@ const dm_mono = DM_Mono({
 
 export const metadata: Metadata = {
   title: "Voca",
-  description: "The voice layer for any phone number on earth.",
+  description: "Browser-first real-time voice AI demo.",
 };
 
 export default function RootLayout({

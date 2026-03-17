@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 os.environ.setdefault("MURF_API_KEY", "test-murf-key")
 os.environ.setdefault("DEEPGRAM_API_KEY", "test-deepgram-key")
 os.environ.setdefault("GEMINI_API_KEY", "test-gemini-key")
-os.environ.setdefault("TWILIO_ACCOUNT_SID", "test-sid")
-os.environ.setdefault("TWILIO_AUTH_TOKEN", "test-token")
-os.environ.setdefault("TWILIO_PHONE_NUMBER", "+10000000000")
+os.environ.setdefault("LIVEKIT_API_KEY", "test-livekit-key")
+os.environ.setdefault("LIVEKIT_API_SECRET", "test-livekit-secret")
+os.environ.setdefault("LIVEKIT_URL", "wss://example.livekit.cloud")
 
 from models.persona import KnowledgeBase, Persona, UIConfig, VoiceConfig
 from models.session import Message, Session
