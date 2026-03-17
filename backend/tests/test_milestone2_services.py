@@ -158,10 +158,10 @@ class TestGeminiService(unittest.IsolatedAsyncioTestCase):
 class TestPipelineService(unittest.IsolatedAsyncioTestCase):
     async def test_handle_text_turn_wires_services(self) -> None:
         class FakeMurf:
-            async def synthesize_once(self, text, voice_config):
+            async def stream_speech(self, text, voice_config):
                 self.last_text = text
                 self.last_voice_config = voice_config
-                return b"fake-audio"
+                yield b"fake-audio"
 
         class FakeGemini:
             async def generate_reply(self, persona, messages):
@@ -189,7 +189,11 @@ class TestPipelineService(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result["assistant_text"], "Your appointment is booked.")
-        self.assertEqual(result["audio_bytes"], b"fake-audio")
+        audio_chunks = []
+        async for chunk in result["audio_stream"]:
+            audio_chunks.append(chunk)
+
+        self.assertEqual(audio_chunks, [b"fake-audio"])
         self.assertEqual(len(session.messages), 2)
 
 

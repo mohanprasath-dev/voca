@@ -19,6 +19,6 @@ class Session(BaseModel):
     session_id: str
     persona_id: str
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    messages: List[Message] = []
+    messages: List[Message] = Field(default_factory=list)
     summary: Optional[SessionSummary] = None
     caller_number: Optional[str] = None

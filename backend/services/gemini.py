@@ -13,9 +13,11 @@ from models.session import Message
 class GeminiService:
     """Gemini Flash client for persona-grounded conversational reasoning."""
 
+    MAX_HISTORY_TURNS = 10
+
     def __init__(self, timeout_seconds: float = 30.0) -> None:
         self._api_key = settings.gemini_api_key
-        self._model = "gemini-2.0-flash"
+        self._model = "gemini-2.5-flash"
         self._endpoint = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self._model}:generateContent"
@@ -32,8 +34,9 @@ class GeminiService:
         )
 
     def _build_contents(self, messages: list[Message]) -> list[dict[str, Any]]:
+        recent = messages[-self.MAX_HISTORY_TURNS:] if len(messages) > self.MAX_HISTORY_TURNS else messages
         contents: list[dict[str, Any]] = []
-        for message in messages:
+        for message in recent:
             role = "model" if message.role == "assistant" else "user"
             contents.append(
                 {

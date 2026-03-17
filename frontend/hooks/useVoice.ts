@@ -3,6 +3,14 @@ import { vocaWS } from '../lib/websocket';
 
 const MIC_ACCESS_REQUIRED_MESSAGE = 'Microphone access required';
 const MIC_DISCONNECTED_MESSAGE = 'Microphone disconnected';
+const SPEECH_DETECTED_RMS_THRESHOLD = 0.05;
+const SILENCE_RMS_THRESHOLD = 0.01;
+const SILENCE_DURATION_MS = 1500;
+const AUDIO_LEVEL_MULTIPLIER = 10;
+
+interface UseVoiceOptions {
+  onSpeechEnd?: () => void;
+}
 
 export interface UseVoiceReturn {
   isListening: boolean;
@@ -12,10 +20,12 @@ export interface UseVoiceReturn {
   error: string | null;
 }
 
-export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void): UseVoiceReturn {
+export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void, options: UseVoiceOptions = {}): UseVoiceReturn {
   const [isListening, setIsListening] = useState(false);
   const isListeningRef = useRef(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  const speechDetectedRef = useRef(false);
+  const silenceTimerRef = useRef<number | null>(null);
 
   const setIsListeningWithRef = useCallback((val: boolean) => {
     isListeningRef.current = val;
@@ -29,7 +39,17 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void): UseVoiceRe
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
   const cleanup = useCallback(() => {
+    clearSilenceTimer();
+    speechDetectedRef.current = false;
+
     if (processorRef.current) {
       processorRef.current.disconnect();
       processorRef.current = null;
@@ -47,7 +67,19 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void): UseVoiceRe
       audioContextRef.current = null;
     }
     setAudioLevel(0);
-  }, []);
+  }, [clearSilenceTimer]);
+
+  const stopListeningInternal = useCallback((notifySpeechEnd: boolean) => {
+    if (!isListeningRef.current) return;
+
+    setIsListeningWithRef(false);
+    cleanup();
+
+    if (notifySpeechEnd) {
+      vocaWS.sendEndOfSpeech();
+      options.onSpeechEnd?.();
+    }
+  }, [cleanup, options, setIsListeningWithRef]);
 
   useEffect(() => {
     return cleanup;
@@ -55,12 +87,18 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void): UseVoiceRe
 
   const startListening = async () => {
     try {
+      if (isListeningRef.current) {
+        return true;
+      }
+
       setError(null);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
       stream.getAudioTracks().forEach((track) => {
         track.onended = () => {
+          clearSilenceTimer();
+          speechDetectedRef.current = false;
           setIsListeningWithRef(false);
           setError(MIC_DISCONNECTED_MESSAGE);
           cleanup();
@@ -98,9 +136,26 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void): UseVoiceRe
           sum += inputData[i] * inputData[i];
         }
         const rms = Math.sqrt(sum / inputData.length);
-        
+
+        if (rms > SPEECH_DETECTED_RMS_THRESHOLD) {
+          speechDetectedRef.current = true;
+        }
+
+        if (speechDetectedRef.current) {
+          if (rms < SILENCE_RMS_THRESHOLD && silenceTimerRef.current === null) {
+            silenceTimerRef.current = window.setTimeout(() => {
+              silenceTimerRef.current = null;
+              stopListeningInternal(true);
+            }, SILENCE_DURATION_MS);
+          }
+
+          if (rms >= SILENCE_RMS_THRESHOLD) {
+            clearSilenceTimer();
+          }
+        }
+
         // Scale RMS to 0-1 for visualization
-        const level = Math.min(Math.max(rms * 10, 0), 1);
+        const level = Math.min(Math.max(rms * AUDIO_LEVEL_MULTIPLIER, 0), 1);
         setAudioLevel(level);
 
         // Convert Float32Array to Int16Array for WebSocket transmission
@@ -128,11 +183,8 @@ export function useVoice(onAudioChunk: (chunk: ArrayBuffer) => void): UseVoiceRe
   };
 
   const stopListening = useCallback(() => {
-    if (!isListening) return;
-    setIsListeningWithRef(false);
-    cleanup();
-    vocaWS.sendEndOfSpeech();
-  }, [isListening, cleanup]);
+    stopListeningInternal(true);
+  }, [stopListeningInternal]);
 
   return {
     isListening,

@@ -1,9 +1,9 @@
-import glob
-import json
 import logging
 from fastapi import FastAPI
 from api.routes import browser, telephony, dashboard
 from api.middleware.cors import setup_cors
+from services.persona import get_persona_service
+from services.session import get_session_service
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -20,12 +20,16 @@ app.include_router(browser.router, prefix="/ws/browser", tags=["Websocket Browse
 app.include_router(telephony.router, prefix="/telephony", tags=["Telephony"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 
+
 @app.on_event("startup")
 async def startup_event():
-    # Load and optionally log personas count on startup
-    persona_files = glob.glob("personas/*.json")
-    # For now, just logging the count to satisfy Checkpoint 1.3
-    logger.info(f"Voca API started. Loaded {len(persona_files)} personas.")
+    persona_svc = get_persona_service()
+    session_svc = get_session_service()
+    app.state.persona_service = persona_svc
+    app.state.session_service = session_svc
+    personas = persona_svc.list_all()
+    logger.info("Voca API started. Loaded %d personas.", len(personas))
+
 
 @app.get("/health")
 async def health_check():
@@ -34,9 +38,5 @@ async def health_check():
 
 @app.get("/personas")
 async def list_personas():
-    personas = []
-    for file_path in glob.glob("personas/*.json"):
-        with open(file_path, "r", encoding="utf-8") as f:
-            persona = json.load(f)
-            personas.append(persona)
-    return personas
+    svc = get_persona_service()
+    return svc.list_all()

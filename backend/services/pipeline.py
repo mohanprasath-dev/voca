@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, UTC
+from collections.abc import AsyncIterator
 from typing import Any
 
 from models.persona import Persona
@@ -51,7 +52,7 @@ class PipelineService:
         )
         session.messages.append(assistant_message)
 
-        audio_bytes = await self._murf.synthesize_once(
+        audio_stream: AsyncIterator[bytes] = self._murf.stream_speech(
             text=assistant_message.content,
             voice_config=persona.voice_config.model_dump(),
         )
@@ -61,5 +62,5 @@ class PipelineService:
             "assistant_language": gemini_output.get("language"),
             "escalation_needed": gemini_output.get("escalation_needed", False),
             "escalation_summary": gemini_output.get("escalation_summary", ""),
-            "audio_bytes": audio_bytes,
+            "audio_stream": audio_stream,
         }

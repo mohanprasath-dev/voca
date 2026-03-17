@@ -5,3 +5,7 @@ pydantic-settings
 python-dotenv
 httpx
 websockets
+aiohttp
+deepgram-sdk
+google-genai
+audioop-lts

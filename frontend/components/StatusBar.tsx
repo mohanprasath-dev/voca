@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 
 interface StatusBarProps {
@@ -21,7 +22,7 @@ export function StatusBar({ connected, latencyMs, personaLabel, accentColor }: S
       }}
       transition={{ duration: 0.4 }}
     >
-      <div className="flex items-center gap-3 w-1/3">
+      <div className="flex items-center gap-3 w-1/4">
         <motion.div 
           animate={{
             backgroundColor: connected ? '#10B981' : '#EF4444',
@@ -32,7 +33,7 @@ export function StatusBar({ connected, latencyMs, personaLabel, accentColor }: S
         <span>{connected ? 'Connected' : 'Disconnected'}</span>
       </div>
       
-      <div className="flex justify-center w-1/3">
+      <div className="flex justify-center w-1/4">
         <motion.span 
           animate={{ color: accentColor }}
           transition={{ duration: 0.4 }}
@@ -41,12 +42,21 @@ export function StatusBar({ connected, latencyMs, personaLabel, accentColor }: S
         </motion.span>
       </div>
 
-      <div className="flex justify-end w-1/3">
+      <div className="flex items-center justify-center w-1/4">
         {connected && latencyMs > 0 ? (
           <span>Ping {latencyMs}ms</span>
         ) : (
           <span>Ping --ms</span>
         )}
+      </div>
+
+      <div className="flex justify-end w-1/4">
+        <Link
+          href="/dashboard"
+          className="text-[#8B92A0] hover:text-white transition-colors no-underline"
+        >
+          Dashboard →
+        </Link>
       </div>
     </motion.div>
   );
