@@ -43,8 +43,8 @@ export default function VoiceOrb({ state, audioLevel, onClick, color }: VoiceOrb
       <AnimatePresence>
         {state === 'speaking' && [0, 1, 2].map((i) => (
           <motion.div
-            key={i}
-            className="absolute rounded-full"
+            key={`speak-${i}`}
+            className="absolute rounded-full pointer-events-none"
             initial={{ width: 160, height: 160, opacity: 0.5, border: `1px solid ${color}` }}
             animate={{ width: 300 + i * 60, height: 300 + i * 60, opacity: 0 }}
             transition={{
@@ -55,8 +55,35 @@ export default function VoiceOrb({ state, audioLevel, onClick, color }: VoiceOrb
             }}
           />
         ))}
-      </AnimatePresence>
 
+        {state === 'listening' && [1, 2, 3, 4].map((i) => {
+          const baseOpacity = 0.6 - (i * 0.12);
+          const ringScale = 1 + (audioLevel * (0.8 + i * 0.3)) + (i * 0.15);
+          const isHigh = audioLevel > 0.4;
+          
+          return (
+            <motion.div
+              key={`listen-${i}`}
+              className="absolute rounded-full pointer-events-none"
+              initial={{ width: 160, height: 160, opacity: 0, scale: 1 }}
+              animate={{
+                scale: ringScale,
+                opacity: audioLevel < 0.05 ? baseOpacity * 0.4 : baseOpacity,
+                boxShadow: isHigh ? `0 0 ${15 + i * 5}px ${color}` : 'none'
+              }}
+              transition={{
+                type: 'spring',
+                stiffness: 300 - (i * 30),
+                damping: 20 + i,
+                mass: 0.5
+              }}
+              style={{
+                border: `1.5px solid ${color}`,
+              }}
+            />
+          );
+        })}
+      </AnimatePresence>
       <motion.button
         onClick={isClickable ? onClick : undefined}
         className="relative flex items-center justify-center rounded-full focus:outline-none z-10"

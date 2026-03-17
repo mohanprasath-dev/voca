@@ -35,7 +35,7 @@ class SessionService:
         self._summaries_text: dict[str, str] = {}
         self._store_path = Path(__file__).resolve().parents[1] / "data" / "sessions.json"
         self._api_key = settings.gemini_api_key
-        self._model = "gemini-2.5-flash"
+        self._model = "gemini-3.1-flash-lite"
         self._endpoint = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self._model}:generateContent"
@@ -48,7 +48,13 @@ class SessionService:
             self._summaries_text = {}
             return
 
-        payload = json.loads(self._store_path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(self._store_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            logger.warning("Session store unreadable, starting fresh in-memory state: %s", exc)
+            self._sessions = {}
+            self._summaries_text = {}
+            return
         sessions_payload = payload.get("sessions", {})
         summaries_payload = payload.get("summaries_text", {})
 

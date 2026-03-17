@@ -47,19 +47,51 @@ interface SessionStats {
   languages_used: string[];
 }
 
+function getRelativeTime(dateString: string) {
+  const diff = Date.now() - new Date(dateString).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, { bg: string; text: string; border: string }> = {
     resolved: { bg: 'rgba(16,185,129,0.1)', text: '#10B981', border: 'rgba(16,185,129,0.2)' },
     escalated: { bg: 'rgba(239,68,68,0.1)', text: '#EF4444', border: 'rgba(239,68,68,0.2)' },
-    completed: { bg: 'rgba(139,146,160,0.1)', text: '#8B92A0', border: 'rgba(139,146,160,0.2)' },
+    ended: { bg: 'rgba(139,146,160,0.1)', text: '#9CA3AF', border: 'rgba(156,163,175,0.25)' },
   };
-  const c = colors[status] || colors.completed;
+  const normalized = status.toLowerCase();
+  const uiStatus = normalized === 'completed' ? 'ended' : normalized;
+  const c = colors[uiStatus] || colors.ended;
+  const label = uiStatus === 'resolved' ? 'Resolved' : uiStatus === 'escalated' ? 'Escalated' : 'Ended';
   return (
     <span
       className="px-2 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider border"
       style={{ backgroundColor: c.bg, color: c.text, borderColor: c.border }}
     >
-      {status}
+      {label}
+    </span>
+  );
+}
+
+function LanguagePills({ languages }: { languages: string[] }) {
+  if (!languages.length) {
+    return <span className="text-[#8B92A0]">-</span>;
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      {languages.map((language) => (
+        <span
+          key={language}
+          className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-[#C8D0DD]"
+        >
+          {language.slice(0, 2).toUpperCase()}
+        </span>
+      ))}
     </span>
   );
 }
@@ -197,7 +229,7 @@ export default function DashboardPage() {
               className="flex flex-col items-center justify-center py-20 gap-4"
             >
               <div className="text-5xl opacity-20">🎙️</div>
-              <p className="text-[#8B92A0] text-sm">No sessions yet. Start a conversation to see it here.</p>
+              <p className="text-[#8B92A0] text-sm">No conversations yet. Launch the app to start your first session.</p>
               <Link
                 href="/app"
                 className="px-5 py-2 rounded-xl border border-white/10 text-white text-sm hover:bg-white/5 transition-colors"
@@ -227,23 +259,24 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between p-5">
                       <div className="flex items-center gap-3">
                         <div
-                          className="w-2.5 h-2.5 rounded-full"
+                          className="w-2.5 h-2.5 shrink-0 rounded-full"
                           style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}60` }}
                         />
                         <span className="text-sm font-medium text-white">{personaName}</span>
+                        <span className="text-xs text-[#8B92A0]">· {getRelativeTime(sess.started_at)}</span>
                       </div>
 
                       <div className="flex items-center gap-4 text-xs text-[#8B92A0] font-mono">
                         <span>{formatDuration(sess.duration_seconds)}</span>
                         <span>{sess.turn_count} turns</span>
-                        <span>{sess.languages_used.join(', ') || '—'}</span>
+                        <LanguagePills languages={sess.languages_used} />
                         <StatusBadge status={sess.resolution_status} />
                       </div>
                     </div>
 
                     {/* Summary line */}
                     {sess.summary_text && (
-                      <div className="px-5 pb-4 text-sm text-[#A8B5C8] leading-relaxed line-clamp-2">
+                      <div className={`px-5 pb-4 text-sm text-[#A8B5C8] leading-relaxed transition-all ${isExpanded ? '' : 'line-clamp-2'}`}>
                         {sess.summary_text}
                       </div>
                     )}

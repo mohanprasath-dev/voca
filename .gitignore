@@ -6,3 +6,6 @@
 /task.md
 /frontend/README.md
 /.github/copilot-instructions.md
+
+*.log
+data/sessions.json

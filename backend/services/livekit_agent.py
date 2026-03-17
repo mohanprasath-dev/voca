@@ -33,6 +33,7 @@ MURF_STYLE_MAP = {
     "promotional": "Promo",
     "promo": "Promo",
 }
+INVALID_LANGUAGE_VALUES = {"", "unknown", "auto", "und", "n/a", "none", "null"}
 
 
 def _parse_room_name(room_name: str) -> tuple[str, str]:
@@ -63,7 +64,12 @@ def _normalize_locale(language: str | None, default_locale: str) -> str:
     if not normalized:
         return default_locale
 
+    if normalized.lower() in INVALID_LANGUAGE_VALUES:
+        return default_locale
+
     if "-" not in normalized:
+        if not re.fullmatch(r"[a-zA-Z]{2,3}", normalized):
+            return default_locale
         if normalized.lower() == "en":
             return default_locale
         return f"{normalized.lower()}-IN"
@@ -113,7 +119,7 @@ class GeminiLiveKitLLM(llm.LLM):
 
     @property
     def model(self) -> str:
-        return "gemini-2.5-flash"
+        return "gemini-3.1-flash-lite"
 
     @property
     def provider(self) -> str:
@@ -169,57 +175,87 @@ class GeminiLiveKitLLMStream(llm.LLMStream):
                 )
             )
 
-        result = await self._llm._gemini_service.generate_livekit_reply(persona=persona, messages=history)
-        raw_reply = str(result["assistant_reply"]).strip()
-        detected_language = _extract_language_tag(raw_reply) or str(result.get("language") or persona.voice_config.language)
-        cleaned_reply = _strip_language_tag(raw_reply)
+        try:
+            result = await self._llm._gemini_service.generate_livekit_reply(persona=persona, messages=history)
+            raw_reply = str(result["assistant_reply"]).strip()
+            detected_language = _extract_language_tag(raw_reply) or str(result.get("language") or persona.voice_config.language)
+            cleaned_reply = _strip_language_tag(raw_reply)
+        except Exception as exc:
+            logger.exception("Failed to generate Gemini LiveKit reply")
+            detected_language = self._llm._agent.current_language or str(persona.voice_config.language)
+            message_lower = str(exc).lower()
+            if "resource_exhausted" in message_lower or "quota exceeded" in message_lower or "429" in message_lower:
+                cleaned_reply = "I am temporarily at capacity right now. Please try again in a minute."
+            else:
+                cleaned_reply = "I heard you, but hit a processing issue. Please try that once more."
 
         previous_language = self._llm._agent.current_language
-        self._llm._agent.current_language = detected_language
+        effective_language = detected_language or previous_language
+        self._llm._agent.current_language = effective_language
 
-        voice_config = persona.voice_config.model_dump()
-        locale = _normalize_locale(detected_language, str(voice_config.get("language", "en-IN")))
-        self._llm._tts_engine.update_options(
-            locale=locale,
-            voice=_resolve_voice_id(voice_config, locale),
-            style=_resolve_style(voice_config.get("murf_style")),
-        )
-
-        session_service.add_message(
-            session.session_id,
-            Message(
-                role="assistant",
-                content=cleaned_reply,
-                timestamp=datetime.now(UTC),
-                language_detected=detected_language,
-            ),
-        )
-
-        if previous_language and previous_language != detected_language:
-            await _publish_event(
-                self._llm._room,
-                {
-                    "type": "language_changed",
-                    "from": previous_language,
-                    "to": detected_language,
-                },
-            )
-
-        await _publish_event(
-            self._llm._room,
-            {
-                "type": "response",
-                "text": cleaned_reply,
-                "language": detected_language,
-            },
-        )
-
+        # Emit the assistant text first so TTS can proceed even if downstream
+        # persistence/event code fails.
         self._event_ch.send_nowait(
             llm.ChatChunk(
                 id=f"reply-{session.session_id}",
                 delta=llm.ChoiceDelta(role="assistant", content=cleaned_reply),
             )
         )
+
+        voice_config = persona.voice_config.model_dump()
+        locale = _normalize_locale(detected_language, str(voice_config.get("language", "en-IN")))
+        try:
+            self._llm._tts_engine.update_options(
+                locale=locale,
+                voice=_resolve_voice_id(voice_config, locale),
+                style=_resolve_style(voice_config.get("murf_style")),
+            )
+        except Exception:
+            logger.exception("Failed to update TTS options for locale=%s", locale)
+            fallback_locale = str(voice_config.get("language", "en-IN"))
+            self._llm._tts_engine.update_options(
+                locale=fallback_locale,
+                voice=_resolve_voice_id(voice_config, fallback_locale),
+                style=_resolve_style(voice_config.get("murf_style")),
+            )
+
+        try:
+            session_service.add_message(
+                session.session_id,
+                Message(
+                    role="assistant",
+                    content=cleaned_reply,
+                    timestamp=datetime.now(UTC),
+                    language_detected=effective_language,
+                ),
+            )
+        except Exception:
+            logger.exception("Failed to persist assistant message for session=%s", session.session_id)
+
+        if previous_language and effective_language and previous_language != effective_language:
+            try:
+                await _publish_event(
+                    self._llm._room,
+                    {
+                        "type": "language_changed",
+                        "from": previous_language,
+                        "to": effective_language,
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to publish language_changed event")
+
+        try:
+            await _publish_event(
+                self._llm._room,
+                {
+                    "type": "response",
+                    "text": cleaned_reply,
+                    "language": effective_language,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to publish response event")
 
 
 class VocaLiveKitAgent(Agent):
@@ -266,24 +302,30 @@ class VocaLiveKitAgent(Agent):
         if not text_content:
             return
 
-        get_session_service().add_message(
-            self._session_id,
-            Message(
-                role="user",
-                content=text_content.strip(),
-                timestamp=datetime.now(UTC),
-                language_detected=self.current_language,
-            ),
-        )
+        try:
+            get_session_service().add_message(
+                self._session_id,
+                Message(
+                    role="user",
+                    content=text_content.strip(),
+                    timestamp=datetime.now(UTC),
+                    language_detected=self.current_language,
+                ),
+            )
+        except Exception:
+            logger.exception("Failed to persist user message for session=%s", self._session_id)
 
-        await _publish_event(
-            self._room,
-            {
-                "type": "transcript",
-                "text": text_content.strip(),
-                "language": self.current_language,
-            },
-        )
+        try:
+            await _publish_event(
+                self._room,
+                {
+                    "type": "transcript",
+                    "text": text_content.strip(),
+                    "language": self.current_language,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to publish transcript event")
 
 
 server = AgentServer()

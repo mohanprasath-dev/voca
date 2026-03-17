@@ -20,6 +20,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePersona, Persona } from '../../hooks/usePersona';
 
 const NOTICE_AUTO_HIDE_MS = 2500;
+const PROCESSING_TIMEOUT_MS = 10000;
+const SPEAKING_SILENCE_TIMEOUT_MS = 4000;
 const API_BASE = 'http://localhost:8000';
 
 interface LiveKitTokenResponse {
@@ -54,6 +56,7 @@ export default function VocaPage() {
   const [sessionSummary, setSessionSummary] = useState<SessionSummaryView | null>(null);
   const [sessionStartMs, setSessionStartMs] = useState<number | null>(null);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isEndingSession, setIsEndingSession] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [latencyMs] = useState<number>(0);
   const [hasAttemptedSession, setHasAttemptedSession] = useState<boolean>(false);
@@ -63,6 +66,8 @@ export default function VocaPage() {
   const sessionStartMsRef = useRef<number | null>(null);
   const roomRef = useRef<Room | null>(null);
   const audioElementsRef = useRef<HTMLAudioElement[]>([]);
+  const processingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speakingSilenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     activePersonaRef.current = activePersona;
@@ -76,6 +81,20 @@ export default function VocaPage() {
     sessionStartMsRef.current = sessionStartMs;
   }, [sessionStartMs]);
 
+  const clearProcessingTimeout = useCallback(() => {
+    if (processingTimeoutRef.current !== null) {
+      clearTimeout(processingTimeoutRef.current);
+      processingTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearSpeakingSilenceTimeout = useCallback(() => {
+    if (speakingSilenceTimeoutRef.current !== null) {
+      clearTimeout(speakingSilenceTimeoutRef.current);
+      speakingSilenceTimeoutRef.current = null;
+    }
+  }, []);
+
   const resetConversation = useCallback(() => {
     setTranscriptEntries([]);
     setNotice(null);
@@ -83,6 +102,7 @@ export default function VocaPage() {
     setHasLanguageDetection(false);
     setLanguageChanged(false);
     setSessionSummary(null);
+    setIsEndingSession(false);
     setSessionStartMs(null);
     setCurrentSessionId(null);
     transcriptEntriesRef.current = [];
@@ -101,8 +121,10 @@ export default function VocaPage() {
         element.remove();
       }
       audioElementsRef.current = [];
+      clearProcessingTimeout();
+      clearSpeakingSilenceTimeout();
     };
-  }, []);
+  }, [clearProcessingTimeout, clearSpeakingSilenceTimeout]);
 
   const markSessionStarted = useCallback(() => {
     if (sessionStartMsRef.current) {
@@ -169,6 +191,8 @@ export default function VocaPage() {
   }, [notice]);
 
   const disconnectRoom = useCallback(async () => {
+    clearProcessingTimeout();
+    clearSpeakingSilenceTimeout();
     const room = roomRef.current;
     roomRef.current = null;
     if (room) {
@@ -180,7 +204,7 @@ export default function VocaPage() {
     }
     audioElementsRef.current = [];
     setIsConnected(false);
-  }, []);
+  }, [clearProcessingTimeout, clearSpeakingSilenceTimeout]);
 
   const appendAgentAudio = useCallback((track: RemoteTrack, participant: RemoteParticipant) => {
     if (track.kind !== Track.Kind.Audio || participant.kind !== ParticipantKind.AGENT) {
@@ -191,11 +215,12 @@ export default function VocaPage() {
     audioElement.autoplay = true;
     document.body.appendChild(audioElement);
     audioElementsRef.current.push(audioElement);
+    clearSpeakingSilenceTimeout();
     setOrbState('speaking');
     void audioElement.play().catch(() => {
       setNotice('Audio playback is blocked. Click the orb again.');
     });
-  }, []);
+  }, [clearSpeakingSilenceTimeout]);
 
   const connectSession = useCallback(async () => {
     if (!activePersona?.id) {
@@ -227,6 +252,8 @@ export default function VocaPage() {
     room.on(RoomEvent.Disconnected, () => {
       setIsConnected(false);
       setOrbState('idle');
+      clearProcessingTimeout();
+      clearSpeakingSilenceTimeout();
     });
 
     room.on(RoomEvent.DataReceived, (payload) => {
@@ -245,11 +272,19 @@ export default function VocaPage() {
             language: event.language || 'en',
             timestamp: Date.now(),
           });
+          clearProcessingTimeout();
           setOrbState('processing');
+          // 10s timeout: if no response arrives, reset orb
+          processingTimeoutRef.current = setTimeout(() => {
+            processingTimeoutRef.current = null;
+            setOrbState('idle');
+            setNotice('Taking longer than expected...');
+          }, PROCESSING_TIMEOUT_MS);
           return;
         }
 
         if (event.type === 'response' && event.text) {
+          clearProcessingTimeout();
           appendTranscriptEntry({
             role: 'voca',
             text: event.text,
@@ -275,24 +310,29 @@ export default function VocaPage() {
     room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
       const agentSpeaking = speakers.some((speaker) => speaker.kind === ParticipantKind.AGENT);
       if (agentSpeaking) {
+        clearSpeakingSilenceTimeout();
         setOrbState('speaking');
         return;
       }
 
-      if (room.localParticipant.isMicrophoneEnabled) {
-        setOrbState('listening');
-        return;
-      }
-
-      if (room.state === 'connected') {
-        setOrbState('idle');
-      }
+      // Agent stopped speaking — set a brief silence window then go idle
+      clearSpeakingSilenceTimeout();
+      speakingSilenceTimeoutRef.current = setTimeout(() => {
+        speakingSilenceTimeoutRef.current = null;
+        if (room.localParticipant.isMicrophoneEnabled) {
+          setOrbState('listening');
+          return;
+        }
+        if (room.state === 'connected') {
+          setOrbState('idle');
+        }
+      }, SPEAKING_SILENCE_TIMEOUT_MS);
     });
 
     await room.connect(data.url, data.token);
     await room.startAudio();
     return room;
-  }, [activePersona?.id, appendAgentAudio, appendTranscriptEntry, currentLanguage, disconnectRoom, updateLanguageState]);
+  }, [activePersona?.id, appendAgentAudio, appendTranscriptEntry, clearProcessingTimeout, clearSpeakingSilenceTimeout, currentLanguage, disconnectRoom, updateLanguageState]);
 
   const handleOrbClick = useCallback(() => {
     if (!activePersona) {
@@ -309,8 +349,14 @@ export default function VocaPage() {
           if (!room) {
             return;
           }
-          await room.localParticipant.setMicrophoneEnabled(true);
-          setOrbState('listening');
+          try {
+            await room.localParticipant.setMicrophoneEnabled(true);
+            setOrbState('listening');
+          } catch (micErr) {
+            const isDenied = micErr instanceof Error && (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError');
+            setNotice(isDenied ? 'Microphone access required' : 'Microphone could not start');
+            setOrbState('idle');
+          }
         })
         .catch(() => {
           setNotice('Microphone access required');
@@ -327,11 +373,23 @@ export default function VocaPage() {
   }, [activePersona, connectSession, orbState]);
 
   const handleEndSession = useCallback(async () => {
-    if (!currentSessionId) {
+    if (isEndingSession) {
       return;
     }
 
+    clearProcessingTimeout();
+    clearSpeakingSilenceTimeout();
+    setIsEndingSession(true);
+
     try {
+      if (!currentSessionId) {
+        const fallback = buildFallbackSummary();
+        setSessionSummary(fallback);
+        await disconnectRoom();
+        setOrbState('idle');
+        return;
+      }
+
       const response = await fetch(`${API_BASE}/livekit/session/end?session_id=${currentSessionId}`, {
         method: 'POST',
       });
@@ -354,14 +412,18 @@ export default function VocaPage() {
       setOrbState('idle');
     } catch {
       setNotice('Unable to end session.');
+    } finally {
+      setIsEndingSession(false);
     }
-  }, [activePersona, buildFallbackSummary, currentSessionId, disconnectRoom]);
+  }, [activePersona, buildFallbackSummary, clearProcessingTimeout, clearSpeakingSilenceTimeout, currentSessionId, disconnectRoom, isEndingSession]);
 
   const handleNewConversation = useCallback(async () => {
+    clearProcessingTimeout();
+    clearSpeakingSilenceTimeout();
     await disconnectRoom();
     setHasAttemptedSession(false);
     resetConversation();
-  }, [disconnectRoom, resetConversation]);
+  }, [clearProcessingTimeout, clearSpeakingSilenceTimeout, disconnectRoom, resetConversation]);
 
   const handlePersonaSwitch = useCallback(async (persona: Persona) => {
     if (orbState !== 'idle') {
@@ -517,14 +579,43 @@ export default function VocaPage() {
             color={activePersona?.ui_config.orb_color || '#00C2B8'}
           />
 
+          <div className="-mt-8 flex flex-col items-center gap-3">
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={orbState}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -5 }}
+                transition={{ duration: 0.2 }}
+                className="text-xs font-mono uppercase tracking-[0.2em] text-[#8B92A0]"
+              >
+                {orbState === 'idle' && 'Click to speak'}
+                {orbState === 'listening' && 'Listening...'}
+                {orbState === 'processing' && 'Thinking...'}
+                {orbState === 'speaking' && 'Speaking...'}
+              </motion.p>
+            </AnimatePresence>
+
+            {activePersona?.ui_config?.label && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-sm text-[#8B92A0]/80 font-light max-w-md text-center"
+              >
+                {activePersona.ui_config.label}
+              </motion.p>
+            )}
+          </div>
+
           {orbState === 'idle' && hasCompletedExchange && !sessionSummary && (
             <button
               onClick={() => {
                 void handleEndSession();
               }}
-              className="px-4 py-2 rounded-lg border border-white/15 text-white/90 text-xs font-mono uppercase tracking-wider hover:bg-white/5 transition-colors"
+              disabled={isEndingSession}
+              className="px-4 py-2 rounded-lg border border-white/15 text-white/90 text-xs font-mono uppercase tracking-wider hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              End Session
+              {isEndingSession ? 'Ending...' : 'End Session'}
             </button>
           )}
 
