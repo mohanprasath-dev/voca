@@ -233,7 +233,7 @@ export default function VocaPage() {
     setSessionSummary(null);
     setOrbState('processing');
 
-    const response = await fetch(`${API_BASE}/livekit/token?persona_id=${activePersona.id}`);
+    const response = await fetch(`${API_BASE}/livekit/token?persona_id=${activePersona?.id}`);
     if (!response.ok) {
       throw new Error(await response.text());
     }
@@ -592,7 +592,7 @@ export default function VocaPage() {
                 className="text-sm uppercase tracking-widest font-semibold mt-2"
                 style={{ color: currentAccent }}
               >
-                {activePersona.name}
+                {activePersona?.name}
               </motion.p>
             )}
 

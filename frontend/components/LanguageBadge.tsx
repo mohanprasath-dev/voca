@@ -19,7 +19,7 @@ export interface LanguageBadgeProps {
 }
 
 export default function LanguageBadge({ language, changed, accentColor }: LanguageBadgeProps) {
-  const code = language.split('-')[0].toLowerCase();
+  const code = (language || 'en').split('-')[0].toLowerCase();
   const displayName = LANGUAGE_MAP[code] || 'English';
 
   return (

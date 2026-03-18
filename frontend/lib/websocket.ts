@@ -30,7 +30,8 @@ class VocaWebSocket {
 
   private getWsUrl(): string {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    return API_URL.replace(/^http/, 'ws');
+    const WS_URL = API_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+    return WS_URL;
   }
 
   connect(
