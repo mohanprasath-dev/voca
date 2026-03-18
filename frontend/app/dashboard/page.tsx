@@ -64,7 +64,7 @@ function StatusBadge({ status }: { status: string }) {
     escalated: { bg: 'rgba(239,68,68,0.1)', text: '#EF4444', border: 'rgba(239,68,68,0.2)' },
     ended: { bg: 'rgba(139,146,160,0.1)', text: '#9CA3AF', border: 'rgba(156,163,175,0.25)' },
   };
-  const normalized = status.toLowerCase();
+  const normalized = (status || '').toLowerCase();
   const uiStatus = normalized === 'completed' ? 'ended' : normalized;
   const c = colors[uiStatus] || colors.ended;
   const label = uiStatus === 'resolved' ? 'Resolved' : uiStatus === 'escalated' ? 'Escalated' : 'Ended';
