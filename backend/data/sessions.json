@@ -722,6 +722,14 @@
       "messages": [],
       "summary": null,
       "caller_number": null
+    },
+    "8b8b2b33": {
+      "session_id": "8b8b2b33",
+      "persona_id": "apex",
+      "started_at": "2026-03-18T06:45:32.346752Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
     }
   },
   "summaries_text": {

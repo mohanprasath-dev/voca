@@ -36,7 +36,7 @@ export function PersonaSwitcher({ personas, activePersona, onSwitch, disabled, p
             className="relative px-6 py-2 text-xs font-medium rounded-full outline-none hover:brightness-110 transition-all"
             animate={{
               color: isActive ? '#FFFFFF' : '#8B92A0',
-              backgroundColor: isActive ? 'transparent' : 'rgba(255, 255, 255, 0.04)'
+              backgroundColor: isActive ? 'rgba(255, 255, 255, 0)' : 'rgba(255, 255, 255, 0.04)'
             }}
             transition={{ duration: 0.3 }}
             style={{ cursor: disabled ? 'not-allowed' : 'pointer' }}

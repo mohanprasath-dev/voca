@@ -31,14 +31,17 @@ class PersonaService:
     def get_by_id(self, persona_id: str) -> Persona | None:
         p = self._personas.get(persona_id)
         if p is None and persona_id == "custom":
-            from models.persona import VoiceConfig, UIConfig
+            from models.persona import VoiceConfig, UIConfig, KnowledgeBase
             return Persona(
                 id="custom",
                 name="Custom Persona",
                 display_name="Custom",
+                organization="Voca",
                 system_prompt="You are a helpful AI assistant.",
-                voice_config=VoiceConfig(),
-                ui_config=UIConfig(accent_color="#FF3366", orb_color="#FF3366", label="Custom AI")
+                knowledge_base=KnowledgeBase(),
+                voice_config=VoiceConfig(murf_voice_id="en-US-matthew", murf_style="Conversational", language="en-US"),
+                ui_config=UIConfig(accent_color="#FF3366", orb_color="#FF3366", label="Custom AI"),
+                escalation_message="I cannot help with that right now."
             )
         return p
 
