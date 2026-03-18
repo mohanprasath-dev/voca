@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const AUTO_REFRESH_MS = 30000;
-const API_BASE = 'http://localhost:8000/api/dashboard';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = `${API_URL}/api/dashboard`;
 
 const PERSONA_COLORS: Record<string, string> = {
   aura: '#00C2B8',
