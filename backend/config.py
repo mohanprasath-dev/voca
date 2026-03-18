@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     livekit_api_key: str = ""
     livekit_api_secret: str = ""
     livekit_url: str = ""
+    port: int = 8000
 
     model_config = SettingsConfigDict(
         env_file=tuple(str(path) for path in ENV_FILES),

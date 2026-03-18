@@ -22,7 +22,7 @@ import { usePersona, Persona } from '../../hooks/usePersona';
 const NOTICE_AUTO_HIDE_MS = 2500;
 const PROCESSING_TIMEOUT_MS = 10000;
 const SPEAKING_SILENCE_TIMEOUT_MS = 4000;
-const API_BASE = 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface LiveKitTokenResponse {
   token: string;

@@ -28,6 +28,11 @@ class VocaWebSocket {
   private allowReconnect: boolean = false;
   private intentionalClose: boolean = false;
 
+  private getWsUrl(): string {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    return API_URL.replace(/^http/, 'ws');
+  }
+
   connect(
     personaId: string,
     onMessage: MessageHandler,
@@ -103,7 +108,7 @@ class VocaWebSocket {
 
     this.connectionInProgress = true;
 
-    this.ws = new WebSocket(`ws://localhost:8000/ws/browser/${this.personaId}`);
+    this.ws = new WebSocket(`${this.getWsUrl()}/ws/browser/${this.personaId}`);
     this.ws.binaryType = 'arraybuffer';
 
     this.ws.onopen = () => {

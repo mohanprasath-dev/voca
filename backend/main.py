@@ -1,9 +1,11 @@
 import logging
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from api.routes import browser, dashboard, livekit
 from api.middleware.cors import setup_cors
 from services.persona import get_persona_service
 from services.session import get_session_service
+from config import settings
 
 
 # Setup loggingfrom dotenv import load_dotenv
@@ -17,6 +19,13 @@ logger = logging.getLogger("voca")
 app = FastAPI(title="Voca API", version="1.0.0")
 
 # Setup CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 setup_cors(app)
 
 # Include routers
@@ -44,3 +53,8 @@ async def health_check():
 async def list_personas():
     svc = get_persona_service()
     return svc.list_all()
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=settings.port, reload=False)
