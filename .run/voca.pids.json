@@ -1,19 +1,19 @@
 ﻿[
     {
         "name":  "api",
-        "pid":  39668,
+        "pid":  45172,
         "stdout":  "D:\\Projects\\voca\\.run\\api.stdout.log",
         "stderr":  "D:\\Projects\\voca\\.run\\api.stderr.log"
     },
     {
         "name":  "worker",
-        "pid":  36428,
+        "pid":  28488,
         "stdout":  "D:\\Projects\\voca\\.run\\worker.stdout.log",
         "stderr":  "D:\\Projects\\voca\\.run\\worker.stderr.log"
     },
     {
         "name":  "frontend",
-        "pid":  40628,
+        "pid":  21980,
         "stdout":  "D:\\Projects\\voca\\.run\\frontend.stdout.log",
         "stderr":  "D:\\Projects\\voca\\.run\\frontend.stderr.log"
     }

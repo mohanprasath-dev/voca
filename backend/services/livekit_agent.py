@@ -157,124 +157,127 @@ class GeminiLiveKitLLM(llm.LLM):
 
 class GeminiLiveKitLLMStream(llm.LLMStream):
     async def _run(self) -> None:
-        persona = get_persona_service().get_by_id(self._llm._persona_id)
-        if persona is None:
-            raise ValueError(f"Persona '{self._llm._persona_id}' not found")
+        try:
+            persona = get_persona_service().get_by_id(self._llm._persona_id)
+            if persona is None:
+                raise ValueError(f"Persona '{self._llm._persona_id}' not found")
 
-        session_service = get_session_service()
-        session = session_service.get_session(self._llm._session_id)
-        if session is None:
-            raise ValueError(f"Session '{self._llm._session_id}' not found")
+            session_service = get_session_service()
+            session = session_service.get_session(self._llm._session_id)
+            if session is None:
+                raise ValueError(f"Session '{self._llm._session_id}' not found")
 
-        history: list[Message] = []
-        for item in self._chat_ctx.items:
-            if not isinstance(item, llm.ChatMessage):
-                continue
-            if item.role not in {"user", "assistant"}:
-                continue
+            history: list[Message] = []
+            for item in self._chat_ctx.items:
+                if not isinstance(item, llm.ChatMessage):
+                    continue
+                if item.role not in {"user", "assistant"}:
+                    continue
 
-            text_content = item.text_content
-            if not text_content:
-                continue
+                text_content = item.text_content
+                if not text_content:
+                    continue
 
-            role = "assistant" if item.role == "assistant" else "user"
-            history.append(
-                Message(
-                    role=role,
-                    content=text_content.strip(),
-                    timestamp=datetime.now(UTC),
-                    language_detected=self._llm._agent.current_language,
+                role = "assistant" if item.role == "assistant" else "user"
+                history.append(
+                    Message(
+                        role=role,
+                        content=text_content.strip(),
+                        timestamp=datetime.now(UTC),
+                        language_detected=self._llm._agent.current_language,
+                    )
+                )
+
+            try:
+                result = await self._llm._gemini_service.generate_livekit_reply(persona=persona, messages=history)
+                print("LIVEKIT TRACE: generated result dictionary ->", result)
+                raw_reply = str(result.get("assistant_reply", "")).strip()
+                print("LIVEKIT TRACE: extracted raw_reply ->", raw_reply)
+                detected_language = _extract_language_tag(raw_reply) or str(result.get("language") or persona.voice_config.language)
+                cleaned_reply = _strip_language_tag(raw_reply)
+                print("LIVEKIT TRACE: final cleaned_reply sent to UI & TTS ->", cleaned_reply)
+            except Exception as exc:
+                logger.error(f"FULL ERROR: {type(exc).__name__}: {exc}", exc_info=True)
+                logger.error(f"Processing error: {exc}", exc_info=True)
+                logger.exception("Failed to generate Gemini LiveKit reply")
+                detected_language = self._llm._agent.current_language or str(persona.voice_config.language)
+                message_lower = str(exc).lower()
+                if "resource_exhausted" in message_lower or "quota exceeded" in message_lower or "429" in message_lower:
+                    cleaned_reply = "I am temporarily at capacity right now. Please try again in a minute."
+                else:
+                    cleaned_reply = "I heard you, but hit a processing issue. Please try that once more."
+
+            previous_language = self._llm._agent.current_language
+            effective_language = detected_language or previous_language
+            self._llm._agent.current_language = effective_language
+
+            cleaned_reply = clean_for_tts(cleaned_reply)
+
+            # Emit the assistant text first so TTS can proceed even if downstream
+            # persistence/event code fails.
+            self._event_ch.send_nowait(
+                llm.ChatChunk(
+                    id=f"reply-{session.session_id}",
+                    delta=llm.ChoiceDelta(role="assistant", content=cleaned_reply),
                 )
             )
 
-        try:
-            result = await self._llm._gemini_service.generate_livekit_reply(persona=persona, messages=history)
-            print("LIVEKIT TRACE: generated result dictionary ->", result)
-            raw_reply = str(result.get("assistant_reply", "")).strip()
-            print("LIVEKIT TRACE: extracted raw_reply ->", raw_reply)
-            detected_language = _extract_language_tag(raw_reply) or str(result.get("language") or persona.voice_config.language)
-            cleaned_reply = _strip_language_tag(raw_reply)
-            print("LIVEKIT TRACE: final cleaned_reply sent to UI & TTS ->", cleaned_reply)
-        except Exception as exc:
-            logger.error(f"FULL ERROR: {type(exc).__name__}: {exc}", exc_info=True)
-            logger.error(f"Processing error: {exc}", exc_info=True)
-            logger.exception("Failed to generate Gemini LiveKit reply")
-            detected_language = self._llm._agent.current_language or str(persona.voice_config.language)
-            message_lower = str(exc).lower()
-            if "resource_exhausted" in message_lower or "quota exceeded" in message_lower or "429" in message_lower:
-                cleaned_reply = "I am temporarily at capacity right now. Please try again in a minute."
-            else:
-                cleaned_reply = "I heard you, but hit a processing issue. Please try that once more."
+            voice_config = persona.voice_config.model_dump()
+            locale = _normalize_locale(detected_language, str(voice_config.get("language", "en-IN")))
+            try:
+                self._llm._tts_engine.update_options(
+                    locale=locale,
+                    voice=_resolve_voice_id(voice_config, locale),
+                    style=_resolve_style(voice_config.get("murf_style")),
+                )
+            except Exception:
+                logger.exception("Failed to update TTS options for locale=%s", locale)
+                fallback_locale = str(voice_config.get("language", "en-IN"))
+                self._llm._tts_engine.update_options(
+                    locale=fallback_locale,
+                    voice=_resolve_voice_id(voice_config, fallback_locale),
+                    style=_resolve_style(voice_config.get("murf_style")),
+                )
 
-        previous_language = self._llm._agent.current_language
-        effective_language = detected_language or previous_language
-        self._llm._agent.current_language = effective_language
+            try:
+                session_service.add_message(
+                    session.session_id,
+                    Message(
+                        role="assistant",
+                        content=cleaned_reply,
+                        timestamp=datetime.now(UTC),
+                        language_detected=effective_language,
+                    ),
+                )
+            except Exception:
+                logger.exception("Failed to persist assistant message for session=%s", session.session_id)
 
-        cleaned_reply = clean_for_tts(cleaned_reply)
+            if previous_language and effective_language and previous_language != effective_language:
+                try:
+                    await _publish_event(
+                        self._llm._room,
+                        {
+                            "type": "language_changed",
+                            "from": previous_language,
+                            "to": effective_language,
+                        },
+                    )
+                except Exception:
+                    logger.exception("Failed to publish language_changed event")
 
-        # Emit the assistant text first so TTS can proceed even if downstream
-        # persistence/event code fails.
-        self._event_ch.send_nowait(
-            llm.ChatChunk(
-                id=f"reply-{session.session_id}",
-                delta=llm.ChoiceDelta(role="assistant", content=cleaned_reply),
-            )
-        )
-
-        voice_config = persona.voice_config.model_dump()
-        locale = _normalize_locale(detected_language, str(voice_config.get("language", "en-IN")))
-        try:
-            self._llm._tts_engine.update_options(
-                locale=locale,
-                voice=_resolve_voice_id(voice_config, locale),
-                style=_resolve_style(voice_config.get("murf_style")),
-            )
-        except Exception:
-            logger.exception("Failed to update TTS options for locale=%s", locale)
-            fallback_locale = str(voice_config.get("language", "en-IN"))
-            self._llm._tts_engine.update_options(
-                locale=fallback_locale,
-                voice=_resolve_voice_id(voice_config, fallback_locale),
-                style=_resolve_style(voice_config.get("murf_style")),
-            )
-
-        try:
-            session_service.add_message(
-                session.session_id,
-                Message(
-                    role="assistant",
-                    content=cleaned_reply,
-                    timestamp=datetime.now(UTC),
-                    language_detected=effective_language,
-                ),
-            )
-        except Exception:
-            logger.exception("Failed to persist assistant message for session=%s", session.session_id)
-
-        if previous_language and effective_language and previous_language != effective_language:
             try:
                 await _publish_event(
                     self._llm._room,
                     {
-                        "type": "language_changed",
-                        "from": previous_language,
-                        "to": effective_language,
+                        "type": "response",
+                        "text": cleaned_reply,
+                        "language": effective_language,
                     },
                 )
             except Exception:
-                logger.exception("Failed to publish language_changed event")
-
-        try:
-            await _publish_event(
-                self._llm._room,
-                {
-                    "type": "response",
-                    "text": cleaned_reply,
-                    "language": effective_language,
-                },
-            )
-        except Exception:
-            logger.exception("Failed to publish response event")
+                logger.exception("Failed to publish response event")
+        finally:
+            self._event_ch.close()
 
 
 class VocaLiveKitAgent(Agent):
@@ -357,7 +360,7 @@ server = AgentServer()
 
 
 def prewarm(proc: JobProcess) -> None:
-    proc.userdata["vad"] = silero.VAD.load()
+    proc.userdata["vad"] = silero.VAD.load(min_silence_duration=1.5, min_speech_duration=0.1)
 
 
 server.setup_fnc = prewarm
@@ -376,9 +379,8 @@ async def voca_agent(ctx: JobContext) -> None:
         ),
         llm=NOT_GIVEN,
         tts=NOT_GIVEN,
-        turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
-        preemptive_generation=True,
+        preemptive_generation=False,
     )
 
     await session.start(
@@ -387,6 +389,7 @@ async def voca_agent(ctx: JobContext) -> None:
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
                 noise_cancellation=lambda _params: noise_cancellation.BVC(),
+                echo_cancellation=True,
             ),
         ),
     )
