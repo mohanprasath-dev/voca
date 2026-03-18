@@ -6,9 +6,9 @@ from api.middleware.cors import setup_cors
 from services.persona import get_persona_service
 from services.session import get_session_service
 from config import settings
+from dotenv import load_dotenv
 
-
-# Setup loggingfrom dotenv import load_dotenv
+# Setup logging
 import os
 
 load_dotenv()
