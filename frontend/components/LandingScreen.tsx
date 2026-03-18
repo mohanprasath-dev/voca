@@ -61,6 +61,7 @@ export default function LandingScreen() {
         <header className="mb-20 flex items-center justify-between">
           <div className="font-display text-2xl font-bold tracking-tight">VOCA</div>
           <nav className="flex gap-6 text-sm font-medium text-[#8B92A0]">
+            <Link href="/about" className="transition-colors hover:text-white cursor-pointer">About</Link>
             <Link href="/dashboard" className="transition-colors hover:text-white cursor-pointer">Dashboard</Link>
           </nav>
         </header>

@@ -11,15 +11,15 @@ router = APIRouter()
 
 
 @router.get("/livekit/token")
-async def get_token(persona_id: str = "apex") -> dict[str, str]:
+async def get_token(persona_id: str = "apex", custom_prompt: str | None = None) -> dict[str, str]:
     persona = get_persona_service().get_by_id(persona_id)
-    if not persona:
+    if not persona and persona_id != "custom":
         raise HTTPException(status_code=404, detail=f"Persona '{persona_id}' not found")
 
     if not settings.livekit_api_key or not settings.livekit_api_secret or not settings.livekit_url:
         raise HTTPException(status_code=500, detail="LiveKit credentials are not configured")
 
-    session = get_session_service().create_session(persona_id)
+    session = get_session_service().create_session(persona_id, custom_prompt)
     room_name = f"voca-{persona_id}-{session.session_id}"
     participant_name = f"user-{persona_id}-{session.session_id}"
 

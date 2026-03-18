@@ -29,10 +29,24 @@ class PersonaService:
         logger.info("PersonaService loaded %d personas", len(self._personas))
 
     def get_by_id(self, persona_id: str) -> Persona | None:
-        return self._personas.get(persona_id)
+        p = self._personas.get(persona_id)
+        if p is None and persona_id == "custom":
+            from models.persona import VoiceConfig, UIConfig
+            return Persona(
+                id="custom",
+                name="Custom Persona",
+                display_name="Custom",
+                system_prompt="You are a helpful AI assistant.",
+                voice_config=VoiceConfig(),
+                ui_config=UIConfig(accent_color="#FF3366", orb_color="#FF3366", label="Custom AI")
+            )
+        return p
 
     def list_all(self) -> list[dict[str, Any]]:
-        return [p.model_dump() for p in self._personas.values()]
+        base_list = [p.model_dump() for p in self._personas.values()]
+        if "custom" not in self._personas:
+            base_list.append(self.get_by_id("custom").model_dump())
+        return base_list
 
 
 # Module-level singleton

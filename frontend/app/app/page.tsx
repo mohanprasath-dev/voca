@@ -60,6 +60,7 @@ export default function VocaPage() {
   const [connectionState, setConnectionState] = useState<'ready' | 'connected' | 'disconnected'>('ready');
   const [latencyMs] = useState<number>(0);
   const [hasAttemptedSession, setHasAttemptedSession] = useState<boolean>(false);
+  const [customPrompt, setCustomPrompt] = useState<string>('');
 
   const activePersonaRef = useRef(activePersona);
   const transcriptEntriesRef = useRef<TranscriptEntry[]>([]);
@@ -233,7 +234,12 @@ export default function VocaPage() {
     setSessionSummary(null);
     setOrbState('processing');
 
-    const response = await fetch(`${API_BASE}/livekit/token?persona_id=${activePersona?.id}`);
+    const params = new URLSearchParams({ persona_id: activePersona.id });
+    if (activePersona.id === 'custom' && customPrompt.trim()) {
+      params.append('custom_prompt', customPrompt.trim());
+    }
+
+    const response = await fetch(`${API_BASE}/livekit/token?${params.toString()}`);
     if (!response.ok) {
       throw new Error(await response.text());
     }
@@ -610,6 +616,25 @@ export default function VocaPage() {
                 {orbState === 'processing' && 'Thinking...'}
                 {orbState === 'speaking' && 'Speaking...'}
               </motion.p>
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {activePersona?.id === 'custom' && orbState === 'idle' && !hasAttemptedSession && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                  animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
+                  exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                  className="w-full max-w-sm mt-4 z-20"
+                >
+                  <label className="text-xs font-mono text-[#8B92A0] mb-2 block uppercase tracking-wider">Persona Instructions</label>
+                  <textarea
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="E.g. You are a helpful AI who speaks like a pirate..."
+                    className="w-full h-24 bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 resize-none transition-colors"
+                  />
+                </motion.div>
+              )}
             </AnimatePresence>
           </div>
 

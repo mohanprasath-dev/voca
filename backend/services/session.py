@@ -80,10 +80,10 @@ class SessionService:
         tmp_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
         tmp_path.replace(self._store_path)
 
-    def create_session(self, persona_id: str) -> Session:
+    def create_session(self, persona_id: str, custom_prompt: str | None = None) -> Session:
         self._load_from_disk()
         session_id = str(uuid.uuid4())[:8]
-        session = Session(session_id=session_id, persona_id=persona_id)
+        session = Session(session_id=session_id, persona_id=persona_id, custom_prompt=custom_prompt)
         self._sessions[session_id] = session
         self._save_to_disk()
         logger.info("Session created: %s for persona %s", session_id, persona_id)

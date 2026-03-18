@@ -299,8 +299,14 @@ class VocaLiveKitAgent(Agent):
         self._session_id = session_id
         self.current_language = default_locale
 
+        session_service = get_session_service()
+        session = session_service.get_session(session_id)
+        effective_instructions = persona.system_prompt
+        if session and session.custom_prompt:
+            effective_instructions = session.custom_prompt
+
         super().__init__(
-            instructions=persona.system_prompt,
+            instructions=effective_instructions,
             llm=GeminiLiveKitLLM(
                 gemini_service=GeminiService(),
                 persona_id=persona_id,

@@ -22,3 +22,4 @@ class Session(BaseModel):
     messages: List[Message] = Field(default_factory=list)
     summary: Optional[SessionSummary] = None
     caller_number: Optional[str] = None
+    custom_prompt: Optional[str] = None

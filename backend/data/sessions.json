@@ -649,10 +649,41 @@
       "messages": [],
       "summary": null,
       "caller_number": null
+    },
+    "d9ba91ed": {
+      "session_id": "d9ba91ed",
+      "persona_id": "apex",
+      "started_at": "2026-03-18T05:54:53.668381Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
+    },
+    "5038d6c2": {
+      "session_id": "5038d6c2",
+      "persona_id": "apex",
+      "started_at": "2026-03-18T05:56:15.308303Z",
+      "messages": [],
+      "summary": {
+        "intent": null,
+        "resolution_status": null,
+        "escalation_needed": false,
+        "sentiment": null,
+        "action_items": []
+      },
+      "caller_number": null
+    },
+    "09c69d61": {
+      "session_id": "09c69d61",
+      "persona_id": "apex",
+      "started_at": "2026-03-18T06:02:18.236476Z",
+      "messages": [],
+      "summary": null,
+      "caller_number": null
     }
   },
   "summaries_text": {
     "9bd3868a": "No conversation recorded.",
-    "5d7435e9": "Session completed."
+    "5d7435e9": "Session completed.",
+    "5038d6c2": "No conversation recorded."
   }
 }
