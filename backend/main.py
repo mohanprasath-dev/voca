@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # Setup logging
 import os
 
-load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("voca")
 
@@ -58,3 +58,4 @@ async def list_personas():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=settings.port, reload=False)
+
